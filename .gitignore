@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.log
+.npx-cache/
+server.ts.bak
+server.ts.mess

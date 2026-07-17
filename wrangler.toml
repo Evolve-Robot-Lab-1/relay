@@ -1,0 +1,20 @@
+name = "agent-network"
+main = "server.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV for persistent storage
+kv_namespaces = [
+  { binding = "AGENTS_KV", id = "86eb6452423b47de8bc1cf5767323457" }
+]
+
+# Workers AI for message processing
+ai = { binding = "AI" }
+
+[[durable_objects.bindings]]
+name = "RELAY_STORE"
+class_name = "RelayStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayStore"]

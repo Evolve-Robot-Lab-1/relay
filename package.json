@@ -1,0 +1,14 @@
+{
+  "name": "agent-network",
+  "version": "1.0.0",
+  "description": "Viral browser-based agent network - anonymous, instant, free",
+  "main": "server.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.112.0"
+  }
+}
