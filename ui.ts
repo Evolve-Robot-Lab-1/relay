@@ -5,18 +5,18 @@ export const HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Your AI representative for clearer conversations.">
+  <meta name="description" content="Relay helps you handle difficult conversations while staying in control.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Relay">
-  <meta property="og:description" content="Your AI representative for clearer conversations.">
-  <meta property="og:image" content="https://relay.durgaai.com/relay-logo.png">
-  <meta property="og:image:width" content="504">
-  <meta property="og:image:height" content="370">
+  <meta property="og:description" content="Your representative for difficult conversations.">
+  <meta property="og:image" content="https://relay.durgaai.com/relay-social.png">
+  <meta property="og:image:width" content="1254">
+  <meta property="og:image:height" content="1254">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Relay">
-  <meta name="twitter:description" content="Your AI representative for clearer conversations.">
-  <meta name="twitter:image" content="https://relay.durgaai.com/relay-logo.png">
-  <link rel="icon" type="image/png" href="/relay-logo.png">
+  <meta name="twitter:description" content="Your representative for difficult conversations.">
+  <meta name="twitter:image" content="https://relay.durgaai.com/relay-social.png">
+  <link rel="icon" type="image/png" href="/relay-mark.png">
   <title>Relay</title>
   <style>
     :root{--bg:#080a09;--panel:#101311;--panel2:#171b18;--line:#29302b;--text:#f3f6f4;--muted:#8d9891;--green:#00e982;--green2:#00b969;--red:#ff5a64;--amber:#f2bb49;--blue:#61a8ff;--radius:6px;--max:760px}
@@ -26,22 +26,20 @@ export const HTML = `<!doctype html>
     button{cursor:pointer}
     button:disabled{cursor:not-allowed;opacity:.55}
     .shell{width:min(100%,var(--max));margin:0 auto;min-height:100vh;padding:18px 18px 92px}
-    header{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);margin-bottom:20px;padding:7px 0}
-    .brand{font-size:19px;font-weight:800;color:#fff}
-    .brand span{color:var(--green)}
-    .connection{font-size:11px;color:var(--muted);margin-left:9px}
-    .connection.offline{color:var(--red)}
-    .header-left{display:flex;align-items:baseline}
-    .brand-group{display:flex;align-items:center;gap:9px;min-width:0}
-    .brand-logo{width:42px;height:31px;object-fit:contain;flex:0 0 auto}
+    header{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);margin-bottom:20px;padding:12px 0}
+    .brand{font-size:22px;line-height:1;font-weight:800;color:#fff}
+    .brand-group{display:flex;align-items:center;gap:11px;min-width:0}
+    .brand-logo{width:36px;height:36px;object-fit:cover;flex:0 0 auto;border-radius:4px}
     .header-copy{min-width:0}
-    .tagline{color:var(--muted);font-size:12px;margin-top:1px;overflow-wrap:anywhere}
-    .icon-btn{width:36px;height:36px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:var(--radius);display:inline-grid;place-items:center;font-size:18px}
+    .tagline{color:var(--muted);font-size:12px;line-height:1.2;margin-top:5px;white-space:nowrap}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    .icon{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+    .icon-btn{width:44px;height:44px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:var(--radius);display:inline-grid;place-items:center}
     .icon-btn:hover{border-color:#435047;background:var(--panel2)}
     .view[hidden],.hidden{display:none!important}
     .section{margin-top:24px}
     .home-tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);margin:2px 0 18px}
-    .home-tab{height:42px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700}
+    .home-tab{height:44px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px}
     .home-tab.active{border-bottom-color:var(--green);color:var(--text)}
     .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
     .section-title{margin:0;font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase}
@@ -55,14 +53,24 @@ export const HTML = `<!doctype html>
     .row-title{display:flex;align-items:center;gap:8px;font-weight:700;min-width:0}
     .row-title span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .row-sub{color:var(--muted);font-size:12px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .row-meta{display:flex;align-items:center;gap:8px;color:#6f7a73;font-size:11px;margin-top:7px;min-width:0}
+    .row-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .row-actions{display:flex;gap:6px;align-items:center}
+    .conversation-list{border:0;display:grid;gap:8px}
+    .conversation-row{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:13px}
+    .conversation-row.needs-action{border-left:3px solid var(--green)}
+    .conversation-row .row-main{width:100%}
+    .empty-state{min-height:320px;display:grid;place-items:center;text-align:center;border-top:1px solid var(--line);padding:36px 16px}
+    .empty-state strong{display:block;color:var(--text);font-size:16px}
+    .empty-state p{max-width:340px;color:var(--muted);margin:8px auto 18px}
     .small-btn{height:30px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:4px;padding:0 10px;font-size:12px}
     .small-btn:hover{border-color:#435047}
     .small-btn.danger{color:var(--red)}
     .badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border:1px solid var(--line);border-radius:999px;font-size:10px;color:var(--muted);white-space:nowrap;text-transform:uppercase}
-    .badge.active,.badge.confirming{border-color:#695521;color:var(--amber)}
-    .badge.resolved,.badge.closed{border-color:#176d48;color:var(--green)}
+    .badge.active,.badge.confirming,.badge.approval{border-color:#695521;color:var(--amber)}
+    .badge.resolved,.badge.closed,.badge.done{border-color:#176d48;color:var(--green)}
     .badge.waiting,.badge.draft{border-color:#244766;color:var(--blue)}
+    .badge.response{border-color:#168052;color:var(--green)}
     .protect{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:#101a15;border:1px solid #1d5138;padding:12px;margin-bottom:18px;border-radius:var(--radius)}
     .protect strong{display:block;font-size:13px}
     .protect span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
@@ -70,7 +78,8 @@ export const HTML = `<!doctype html>
     .primary:hover{background:#12f08c}
     .secondary{height:40px;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:var(--radius);font-weight:700;padding:0 16px}
     .danger-btn{height:40px;border:1px solid #743038;background:#211113;color:#ff858c;border-radius:var(--radius);font-weight:700;padding:0 16px}
-    .fab{position:fixed;right:max(22px,calc((100vw - var(--max))/2 + 22px));bottom:22px;width:54px;height:54px;border:0;border-radius:50%;background:var(--green);color:#001b0d;font-size:28px;font-weight:500;box-shadow:0 8px 28px #00e98245}
+    .fab{position:fixed;right:max(22px,calc((100vw - var(--max))/2 + 22px));bottom:22px;width:54px;height:54px;border:0;border-radius:50%;background:var(--green);color:#001b0d;display:grid;place-items:center;box-shadow:0 8px 28px #00e98245}
+    .fab .icon{width:24px;height:24px}
     .fab:hover{background:#16f493}
     dialog{width:min(calc(100% - 28px),500px);max-height:calc(100vh - 40px);overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);padding:0;box-shadow:0 22px 80px #000b}
     dialog::backdrop{background:#000b}
@@ -85,16 +94,15 @@ export const HTML = `<!doctype html>
     textarea{min-height:98px;resize:vertical}
     .hint{color:var(--muted);font-size:12px;margin:7px 0 0}
     .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;background:#070908;border:1px solid var(--line);padding:11px;border-radius:var(--radius);color:#b8fbd6}
-    .profile-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--green)}
     .divider{height:1px;background:var(--line);margin:20px 0}
-    .back{border:0;background:transparent;color:var(--muted);padding:0 0 10px;font-weight:700}
+    .back{height:40px;border:0;background:transparent;color:var(--muted);padding:0 0 10px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
     .back:hover{color:var(--text)}
     .convo-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;border-bottom:1px solid var(--line);padding-bottom:14px}
     .convo-head h1{font-size:18px;margin:0 0 7px;overflow-wrap:anywhere}
     .convo-meta{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:12px}
     .convo-actions{display:flex;gap:6px}
     .tabs{display:grid;grid-template-columns:1fr 1fr;margin:14px 0;border-bottom:1px solid var(--line)}
-    .tab{height:39px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700}
+    .tab{height:44px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px}
     .tab.active{color:var(--text);border-bottom-color:var(--green)}
     .result-panel{background:var(--panel);border-left:3px solid var(--amber);padding:13px 14px;margin:14px 0}
     .result-panel.confirmed{border-left-color:var(--green)}
@@ -130,14 +138,14 @@ export const HTML = `<!doctype html>
     .representative-toggle.off{border-color:var(--line);background:#101211;color:var(--muted)}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.tagline{font-size:11px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.brand{font-size:20px}.tagline{font-size:11px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.conversation-row{grid-template-columns:minmax(0,1fr) auto}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
   </style>
 </head>
 <body>
   <main class="shell">
     <header>
-      <div class="brand-group"><img class="brand-logo" src="/relay-logo.png" alt=""><div class="header-copy"><div class="header-left"><div class="brand">Re<span>lay</span></div><span id="connection" class="connection">Connecting</span></div><div id="tagline" class="tagline">Your AI representative for clearer conversations.</div></div></div>
-      <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery">&#128100;</button>
+      <div class="brand-group"><img class="brand-logo" src="/relay-mark.png" alt=""><div class="header-copy"><div class="brand">RELAY</div><div id="tagline" class="tagline">say it better.</div></div><span id="connection" class="sr-only" aria-live="polite">Connecting</span></div>
+      <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 0 0-16 0"></path></svg></button>
     </header>
 
     <section id="home-view" class="view">
@@ -145,25 +153,25 @@ export const HTML = `<!doctype html>
         <div><strong>Protect your profile</strong><span>Keep your conversations and contacts when you change devices.</span></div>
         <button class="primary" type="button" data-action="open-profile">View recovery code</button>
       </div>
-      <div class="home-tabs"><button id="home-conversations-tab" class="home-tab active" type="button" data-action="set-home-tab" data-tab="conversations">&#128172; Conversations</button><button id="home-contacts-tab" class="home-tab" type="button" data-action="set-home-tab" data-tab="contacts">&#128100; Contacts</button></div>
+      <div class="home-tabs"><button id="home-conversations-tab" class="home-tab active" type="button" data-action="set-home-tab" data-tab="conversations"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path></svg>Conversations</button><button id="home-contacts-tab" class="home-tab" type="button" data-action="set-home-tab" data-tab="contacts"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Contacts</button></div>
       <section id="home-conversations-panel" class="section">
-        <div class="section-head"><h1 class="section-title">Active conversations</h1><button class="text-btn danger" type="button" data-action="clear-conversations">Clear all</button></div>
-        <div id="thread-list" class="list"></div>
+        <div class="section-head"><h1 class="section-title">Active conversations</h1><button id="manage-conversations-button" class="text-btn hidden" type="button" data-action="toggle-manage">Manage</button></div>
+        <div id="thread-list" class="list conversation-list"></div>
       </section>
       <section id="home-contacts-panel" class="section hidden">
         <div class="section-head"><h2 class="section-title">Contacts</h2></div>
         <div id="contact-list" class="list"></div>
       </section>
-      <button class="fab" type="button" data-action="open-create" title="New conversation" aria-label="New conversation">+</button>
+      <button class="fab" type="button" data-action="open-create" title="Start a new conversation" aria-label="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
     </section>
 
     <section id="conversation-view" class="view" hidden>
-      <button class="back" type="button" data-action="go-home">&#8592; Back</button>
+      <button class="back" type="button" data-action="go-home"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>Back</button>
       <div class="convo-head">
         <div><h1 id="conversation-title">Conversation</h1><div class="convo-meta"><span id="conversation-status" class="badge">Draft</span><span id="conversation-peer"></span></div></div>
         <div class="convo-actions"><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
       </div>
-      <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private">&#128274; Private</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared">&#127760; Shared</button></div>
+      <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Private</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"></path></svg>Shared</button></div>
       <section id="draft-card" class="draft-card hidden">
         <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-original" class="draft-original"></div><div id="draft-facts" class="facts"></div>
         <div id="tone-options" class="tone-options"><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="professional">Professional</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="friendly">Friendly</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="direct">Direct</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="casual">Casual</button></div>
@@ -184,8 +192,8 @@ export const HTML = `<!doctype html>
     <div class="dialog-head"><h2>New conversation</h2><button class="icon-btn" type="button" data-close="create-dialog" aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <label for="target-contact">Start with</label><select id="target-contact"><option value="">Secure invite link</option></select>
-      <label for="new-message">What conversation do you want help with?</label><textarea id="new-message" maxlength="4000" placeholder="Describe what you want to say or arrange"></textarea>
-      <p class="hint">Your instruction stays private. Only an approved draft is shared.</p>
+      <label for="new-message">What do you want to communicate?</label><textarea id="new-message" maxlength="4000" placeholder="Write what you want the other person to understand."></textarea>
+      <p class="hint">Your words stay private. Review Relay's draft before it is sent.</p>
     </div>
     <div class="dialog-actions"><button class="secondary" type="button" data-close="create-dialog">Cancel</button><button id="create-button" class="primary" type="button" data-action="create-goal">Generate draft</button></div>
   </dialog>
@@ -194,7 +202,6 @@ export const HTML = `<!doctype html>
     <div class="dialog-head"><h2>Relay profile</h2><button class="icon-btn" type="button" data-close="profile-dialog" aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <label for="display-name">Display name</label><input id="display-name" maxlength="48" placeholder="Name shown to contacts">
-      <p class="hint">Profile ID: <span id="profile-id" class="profile-id"></span></p>
       <button class="secondary" type="button" data-action="save-name">Save name</button>
       <div class="divider"></div>
       <label>Recovery code</label><div id="recovery-code" class="code"></div><p class="hint">Anyone with this code can access your Relay profile. Store it privately.</p>
@@ -216,11 +223,23 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
-    const shortId = id => id ? id.slice(0, 7) : '';
-    const labelFor = profile => profile?.name || shortId(profile?.id) || 'Waiting for participant';
+    const labelFor = profile => profile ? profile.name || 'Other person' : 'Waiting for participant';
+
+    function relativeTime(value) {
+      const elapsed = Math.max(0, Date.now() - Number(value || 0));
+      const minutes = Math.floor(elapsed / 60_000);
+      if (minutes < 1) return 'just now';
+      if (minutes < 60) return minutes + 'm ago';
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours + 'h ago';
+      const days = Math.floor(hours / 24);
+      if (days === 1) return 'yesterday';
+      if (days < 7) return days + 'd ago';
+      return new Date(value).toLocaleDateString();
+    }
 
     function normalizeGoal(goal) {
       if (!goal || goal.result) return goal;
@@ -341,7 +360,7 @@ export const HTML = `<!doctype html>
       }
       if (message.type === 'welcome') {
         state.welcomed = true;
-        byId('connection').textContent = 'Private';
+        byId('connection').textContent = 'Connected';
         applyBootstrap(message);
         if (state.invite) send({ type:'claim-invite', invite:state.invite });
         return;
@@ -403,6 +422,7 @@ export const HTML = `<!doctype html>
       state.threads = (data.threads || []).map(thread => ({ ...thread, status:thread.status === 'agreed' ? 'resolved' : thread.status === 'proposed' ? 'active' : thread.status }));
       state.contacts = data.contacts || [];
       state.blocks = data.blocks || [];
+      if (!state.threads.length) state.managingThreads = false;
       renderHome();
       renderProfile();
     }
@@ -414,6 +434,9 @@ export const HTML = `<!doctype html>
       byId('home-contacts-tab').classList.toggle('active', state.homeTab === 'contacts');
       byId('home-conversations-panel').classList.toggle('hidden', state.homeTab !== 'conversations');
       byId('home-contacts-panel').classList.toggle('hidden', state.homeTab !== 'contacts');
+      const manage = byId('manage-conversations-button');
+      manage.classList.toggle('hidden', state.threads.length === 0);
+      manage.textContent = state.managingThreads ? 'Done' : 'Manage';
       const useful = state.threads.some(thread => ['active','confirming','resolved','closed'].includes(thread.status));
       byId('protect-banner').classList.toggle('hidden', !useful || localStorage.getItem('relayRecoveryAcknowledged') === '1');
     }
@@ -421,17 +444,25 @@ export const HTML = `<!doctype html>
     function renderThreads() {
       const list = byId('thread-list');
       list.replaceChildren();
-      if (!state.threads.length) return list.append(node('div', 'empty', 'No conversations yet.'));
+      if (!state.threads.length) {
+        const empty = node('div', 'empty-state');
+        const content = node('div');
+        content.append(node('strong', '', 'No conversations yet.'), node('p', '', 'Start one when there is something you would rather not say alone.'));
+        const start = actionButton('Start a conversation', 'open-create', 'primary');
+        content.append(start); empty.append(content); list.append(empty); return;
+      }
       state.threads.forEach(thread => {
-        const row = node('div', 'row');
+        const row = node('article', 'row conversation-row' + (thread.actionRequired ? ' needs-action' : ''));
         const main = node('button', 'row-main');
         main.type = 'button'; main.dataset.action = 'open-thread'; main.dataset.goalId = thread.goalId;
         const title = node('div', 'row-title');
-        title.append(node('span', '', labelFor(thread.peer)), node('span', 'badge ' + thread.status, statusLabels[thread.status] || thread.status));
-        main.append(title, node('div', 'row-sub', thread.title));
+        title.append(node('span', '', thread.title || 'New conversation'), node('span', 'badge ' + (thread.statusKey || thread.status), thread.displayStatus || statusLabels[thread.status] || thread.status));
+        const meta = node('div', 'row-meta');
+        meta.append(node('span', '', thread.peerLabel || labelFor(thread.peer)), node('span', '', 'Updated ' + relativeTime(thread.updatedAt)));
+        main.append(title, node('div', 'row-sub', thread.summary || ''), meta);
         const actions = node('div', 'row-actions');
         const remove = actionButton('Remove', 'remove-thread', 'small-btn danger'); remove.dataset.goalId = thread.goalId;
-        actions.append(remove); row.append(main, actions); list.append(row);
+        actions.append(remove); actions.classList.toggle('hidden', !state.managingThreads); row.append(main, actions); list.append(row);
       });
     }
 
@@ -445,7 +476,7 @@ export const HTML = `<!doctype html>
       state.contacts.forEach(contact => {
         const option = document.createElement('option'); option.value = contact.id; option.textContent = labelFor(contact); select.append(option);
         const row = node('div', 'row');
-        const info = node('div', 'row-main'); info.append(node('div', 'row-title', labelFor(contact)), node('div', 'row-sub', contact.id));
+        const info = node('div', 'row-main'); info.append(node('div', 'row-title', labelFor(contact)), node('div', 'row-sub', 'Last active ' + relativeTime(contact.updatedAt)));
         const actions = node('div', 'row-actions');
         const message = actionButton('Message', 'message-contact'); message.dataset.contactId = contact.id;
         const remove = actionButton('Remove', 'remove-contact'); remove.dataset.contactId = contact.id;
@@ -457,12 +488,11 @@ export const HTML = `<!doctype html>
     function renderProfile() {
       if (!state.profile) return;
       byId('display-name').value = state.profile.name || '';
-      byId('profile-id').textContent = state.profile.id;
       byId('recovery-code').textContent = state.recovery;
       const list = byId('blocked-list'); list.replaceChildren();
       byId('blocked-section').classList.toggle('hidden', state.blocks.length === 0);
       state.blocks.forEach(block => {
-        const row = node('div', 'blocked-row'); row.append(node('span', 'profile-id', shortId(block.id)));
+        const row = node('div', 'blocked-row'); row.append(node('span', '', block.name || 'Blocked profile'));
         const button = actionButton('Unblock', 'unblock-contact'); button.dataset.contactId = block.id; row.append(button); list.append(row);
       });
     }
@@ -484,8 +514,8 @@ export const HTML = `<!doctype html>
       const goal = state.goal;
       if (!goal) return;
       const peer = goal.participants.find(profile => profile.id !== state.profile.id);
-      byId('conversation-title').textContent = labelFor(peer);
-      byId('conversation-peer').textContent = peer ? shortId(peer.id) : 'Invite not claimed';
+      byId('conversation-title').textContent = goal.title || labelFor(peer);
+      byId('conversation-peer').textContent = peer ? labelFor(peer) : 'Invite not claimed';
       const status = byId('conversation-status'); status.textContent = statusLabels[goal.status] || goal.status; status.className = 'badge ' + goal.status;
       byId('share-button').classList.toggle('hidden', !goal.canInvite);
       byId('delete-everyone-button').classList.toggle('hidden', !goal.canDeleteEveryone);
@@ -596,6 +626,7 @@ export const HTML = `<!doctype html>
       const action = target.dataset.action;
       if (action === 'open-create') return openCreate();
       if (action === 'set-home-tab') { state.homeTab = target.dataset.tab; renderHome(); return; }
+      if (action === 'toggle-manage') { state.managingThreads = !state.managingThreads; renderHome(); return; }
       if (action === 'message-contact') return openCreate(target.dataset.contactId);
       if (action === 'go-home') return goHome();
       if (action === 'open-profile') {
@@ -609,14 +640,13 @@ export const HTML = `<!doctype html>
       if (action === 'new-profile') { localStorage.removeItem('aid'); state.recovery = ''; localStorage.removeItem('relayRecovery'); createProfile(true).catch(error => toast(error.message)); return; }
       if (action === 'restore-profile') return restoreProfile();
       if (action === 'create-goal') {
-        const message = byId('new-message').value.trim(); if (!message) return toast('Describe the conversation first.');
+        const message = byId('new-message').value.trim(); if (!message) return toast('Write what you want to communicate first.');
         target.disabled = true;
         if (!send({ type:'create-goal', message, tone:'professional', targetId:byId('target-contact').value || null })) target.disabled = false;
         return;
       }
       if (action === 'open-thread') return send({ type:'open-goal', goalId:target.dataset.goalId });
       if (action === 'remove-thread') { if (confirm('Remove this conversation from your list?')) send({ type:'remove-conversation', goalId:target.dataset.goalId }); return; }
-      if (action === 'clear-conversations') { if (state.threads.length && confirm('Remove all conversations from your list? Other participants keep theirs.')) send({ type:'clear-conversations' }); return; }
       if (action === 'remove-contact') return send({ type:'remove-contact', contactId:target.dataset.contactId });
       if (action === 'block-contact') { if (confirm('Block this profile? New direct conversations and invites will be rejected.')) send({ type:'block-contact', contactId:target.dataset.contactId }); return; }
       if (action === 'unblock-contact') return send({ type:'unblock-contact', contactId:target.dataset.contactId });

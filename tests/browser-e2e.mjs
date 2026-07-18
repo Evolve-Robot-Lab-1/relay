@@ -121,13 +121,21 @@ try {
     throw new Error(message);
   }
 
-  await waitFor(`document.querySelector('#connection')?.textContent === 'Private'`, 'Profile did not connect.');
+  await waitFor(`document.querySelector('#connection')?.textContent === 'Connected'`, 'Profile did not connect.');
   console.log('Browser: Relay profile connected');
-  assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'Your AI representative for clearer conversations.');
-  await waitFor(`document.querySelector('.brand-logo')?.complete && document.querySelector('.brand-logo')?.naturalWidth === 504`, 'Relay logo did not load.');
+  assert.equal(await evaluate(`document.querySelector('.brand')?.textContent`), 'RELAY');
+  assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'say it better.');
+  assert.equal(await evaluate(`document.querySelector('header')?.innerText.includes('Private')`), false, 'Private must not appear beside the brand.');
+  await waitFor(`document.querySelector('.brand-logo')?.complete && document.querySelector('.brand-logo')?.naturalWidth === 512`, 'Relay logo did not load.');
+  assert.ok(await evaluate(`document.querySelector('#profile-button svg.icon') !== null`), 'Profile should use an outline icon.');
+  assert.equal(await evaluate(`document.querySelector('#manage-conversations-button').classList.contains('hidden')`), true, 'Manage must be hidden for an empty list.');
+  assert.ok((await evaluate(`document.querySelector('#thread-list').textContent`)).includes('Start one when there is something you would rather not say alone.'));
   await evaluate(`Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async()=>{} } })`);
   await evaluate(`window.prompt = () => ''`);
-  await evaluate(`document.querySelector('[data-action="open-create"]').click()`);
+  await evaluate(`document.querySelector('#thread-list [data-action="open-create"]').click()`);
+  assert.equal(await evaluate(`document.querySelector('label[for="new-message"]').textContent`), 'What do you want to communicate?');
+  assert.equal(await evaluate(`document.querySelector('#new-message').placeholder`), 'Write what you want the other person to understand.');
+  assert.equal(await evaluate(`document.querySelector('#new-message + .hint').textContent`), "Your words stay private. Review Relay's draft before it is sent.");
   await evaluate(`document.querySelector('#new-message').value = 'Meet Friday at 3pm in the main office.'`);
   await evaluate(`document.querySelector('#create-button').click()`);
   await waitFor(`!document.querySelector('#draft-card').classList.contains('hidden') || document.querySelector('#toast').textContent.includes('not sent')`, 'Generate Draft produced no UI result.');
@@ -162,14 +170,27 @@ try {
   assert.ok((await evaluate(`document.querySelector('#shared-tab').textContent`)).includes('Shared'));
 
   await evaluate(`document.querySelector('[data-action="go-home"]').click()`);
+  await waitFor(`document.querySelectorAll('#thread-list .conversation-row').length === 1`, 'Conversation did not appear on the home screen.');
+  assert.match(await evaluate(`document.querySelector('#thread-list .row-title span')?.textContent`), /Friday/i);
+  assert.equal(await evaluate(`document.querySelector('#manage-conversations-button').classList.contains('hidden')`), false, 'Manage should appear when conversations exist.');
+  assert.equal(await evaluate(`document.querySelector('#thread-list .row-actions').classList.contains('hidden')`), true, 'Remove controls should be hidden outside Manage mode.');
+  await evaluate(`document.querySelector('#manage-conversations-button').click()`);
+  assert.equal(await evaluate(`document.querySelector('#manage-conversations-button').textContent`), 'Done');
+  assert.equal(await evaluate(`document.querySelector('#thread-list .row-actions').classList.contains('hidden')`), false, 'Manage mode should reveal Remove controls.');
+  await evaluate(`document.querySelector('#manage-conversations-button').click()`);
+  assert.equal(await evaluate(`document.querySelector('#thread-list .row-actions').classList.contains('hidden')`), true);
+  const conversationScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-conversations.png', Buffer.from(conversationScreenshot.data, 'base64'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+  const mobileConversationScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-conversations-mobile.png', Buffer.from(mobileConversationScreenshot.data, 'base64'));
   await evaluate(`document.querySelector('#home-contacts-tab').click()`);
   assert.equal(await evaluate(`document.querySelector('#home-contacts-panel').classList.contains('hidden')`), false);
   assert.equal(await evaluate(`document.querySelector('#home-conversations-panel').classList.contains('hidden')`), true);
 
-  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
   const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-mobile.png', Buffer.from(screenshot.data, 'base64'));
-  console.log('Browser E2E passed: approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
+  console.log('Browser E2E passed: brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
 } catch (error) {
   console.error('Browser E2E failed:', error?.stack || error);
   if (chromeError) console.error(chromeError);

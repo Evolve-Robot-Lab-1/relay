@@ -38,8 +38,8 @@ export default {
   async fetch(request: Request, env: any) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/') || url.pathname === '/ws') return forward(request, env, url);
-    if (url.pathname === '/relay-logo.png') return env.ASSETS.fetch(request);
-    if (url.pathname === '/favicon.ico') return new Response(null, { status: 204 });
+    if (/^\/relay-[a-z-]+\.png$/.test(url.pathname)) return env.ASSETS.fetch(request);
+    if (url.pathname === '/favicon.ico') return env.ASSETS.fetch(new Request(new URL('/relay-mark.png', url.origin), request));
     if (request.method !== 'GET' || url.pathname !== '/') return new Response('Not found', { status: 404 });
     const scriptNonce = nonce();
     return new Response(HTML.replace('__NONCE__', scriptNonce), { headers: securityHeaders(scriptNonce) });

@@ -44,6 +44,13 @@ function cleanText(value: unknown, max = 4000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+function conversationTitle(value: unknown, max = 72) {
+  const text = cleanText(value, max * 2).replace(/\s+/g, ' ');
+  if (!text) return '';
+  const meaningful = text.replace(/^(?:hi|hello|hey)(?:\s+there)?[!,.]?\s+/i, '') || text;
+  return meaningful.length <= max ? meaningful : meaningful.slice(0, max - 3).trimEnd() + '...';
+}
+
 function jsonStringField(value: string, key: string) {
   const match = new RegExp(`"${key}"\\s*:\\s*"`, 'i').exec(value);
   if (!match) return '';
@@ -420,7 +427,7 @@ export class RelayStore {
   async createGoal(profileId: string, message: any, origin: string) {
     if (!this.allow(`create:${profileId}`, 12, 60_000)) throw new Error('Please wait before starting another conversation.');
     const raw = cleanText(message.message);
-    if (!raw) throw new Error('Describe the conversation you want help with.');
+    if (!raw) throw new Error('Write what you want to communicate first.');
     const tone = TONES.has(message.tone) ? message.tone : 'professional';
     const targetId = validProfileId(message.targetId) && message.targetId !== profileId ? message.targetId : null;
     if (targetId) {
@@ -443,6 +450,7 @@ export class RelayStore {
       inviteHash: inviteSecret ? await sha256(inviteSecret) : null,
       inviteClaimedAt: targetId ? now : null,
       status: 'draft',
+      title: '',
       tone,
       representativeMode: { [profileId]: true },
       thread: [],
@@ -511,6 +519,7 @@ export class RelayStore {
     const note = { id: `N${randomHex(12)}`, ownerId: profileId, text: raw, createdAt: Date.now() };
     goal.privateNotes.push(note);
     goal.thread.push({ id: `M${randomHex(16)}`, from: profileId, text: drafted.draft, noteId: note.id, createdAt: Date.now(), deletedAt: null });
+    if (!goal.title) goal.title = conversationTitle(drafted.draft);
     this.updateResultFromDraft(goal, drafted);
     goal.status = goal.participants.length === 1 ? 'waiting' : goal.result.status === 'confirming' ? 'confirming' : 'active';
     goal.updatedAt = Date.now();
@@ -527,6 +536,7 @@ export class RelayStore {
     if (!pending || pending.ownerId !== profileId) throw new Error('No draft is waiting for your approval.');
     const message = { id: `M${randomHex(16)}`, from: profileId, text: pending.draft, noteId: pending.noteId, createdAt: Date.now(), deletedAt: null };
     goal.thread.push(message);
+    if (!goal.title) goal.title = conversationTitle(message.text);
     goal.pendingDraft = null;
     this.updateResultFromDraft(goal, pending);
     goal.status = goal.participants.length === 1 ? 'waiting' : goal.result.status === 'confirming' ? 'confirming' : 'active';
@@ -791,10 +801,38 @@ export class RelayStore {
       const peerId = goal.participants.find((id: string) => id !== profileId) || null;
       const peer = peerId ? await this.read(`profile:${peerId}`) : null;
       const ownPending = goal.pendingDraft?.ownerId === profileId ? goal.pendingDraft.draft : '';
+      const ownPrivate = goal.privateNotes.find((item: any) => item.ownerId === profileId)?.text || '';
+      const peerLabel = peerId ? cleanName(peer?.name) || 'Other person' : 'No participant yet';
+      const sharedTitle = conversationTitle(goal.title || visible[0]?.text);
+      const title = sharedTitle || conversationTitle(ownPending || ownPrivate) || (peerId ? `Conversation with ${peerLabel}` : 'New conversation');
+      const last = visible.at(-1);
+      const finished = ['resolved', 'closed', 'completed', 'cancelled'].includes(goal.status);
+      const actionRequired = Boolean(ownPending || (!finished && last && last.from !== profileId));
+      let statusKey = 'active';
+      let displayStatus = 'Active';
+      let summary = last ? conversationTitle(last.text, 96) : 'No approved messages yet.';
+      if (ownPending) {
+        statusKey = 'approval'; displayStatus = 'Ready for approval'; summary = "Relay's draft is ready to review.";
+      } else if (finished) {
+        statusKey = 'done'; displayStatus = 'Done'; summary = goal.status === 'closed' ? 'Conversation closed.' : 'Conversation marked done.';
+      } else if (last && last.from !== profileId) {
+        statusKey = 'response'; displayStatus = 'Needs your response'; summary = `${peerLabel} replied. Review and respond.`;
+      } else if (goal.status === 'confirming') {
+        statusKey = 'confirming'; displayStatus = 'Confirming details'; summary = 'Shared details are waiting for confirmation.';
+      } else if (goal.status === 'draft' && !last) {
+        statusKey = peerId ? 'waiting' : 'draft'; displayStatus = peerId ? 'Waiting' : 'Draft'; summary = peerId ? 'Waiting for the first approved message.' : 'Draft not sent yet.';
+      } else if (goal.status === 'waiting' || last?.from === profileId) {
+        statusKey = 'waiting'; displayStatus = 'Waiting'; summary = peerId ? 'Waiting for a response.' : 'Share the invite link to continue.';
+      }
       threads.push({
         goalId: goal.id,
-        title: cleanText(visible.at(-1)?.text || ownPending || 'New conversation', 80),
+        title,
+        summary,
         status: goal.status,
+        statusKey,
+        displayStatus,
+        actionRequired,
+        peerLabel,
         peer: peerId ? { id: peerId, name: peer?.name || '' } : null,
         creator: goal.creatorId === profileId,
         updatedAt: goal.updatedAt
@@ -856,6 +894,7 @@ export class RelayStore {
       inviteHash: null,
       inviteClaimedAt: raw.to ? (raw.updatedAt || now) : null,
       status: statusFromLegacy(raw.status, participants),
+      title: conversationTitle(raw.title || thread.find((item: any) => !item.deletedAt)?.text),
       tone: TONES.has(raw.tone) ? raw.tone : 'professional',
       representativeMode: raw.representativeMode || {},
       thread,
@@ -895,6 +934,7 @@ export class RelayStore {
     const pendingNote = goal.pendingDraft?.ownerId === profileId ? ownerNotes.find((item: any) => item.id === goal.pendingDraft.noteId) : null;
     return {
       id: goal.id,
+      title: conversationTitle(goal.title || goal.thread.find((item: any) => !item.deletedAt)?.text),
       creatorId: goal.creatorId,
       participants: goal.participants.map((id: string) => profiles[id]),
       status: goal.status,

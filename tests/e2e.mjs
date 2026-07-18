@@ -102,6 +102,13 @@ try {
   };
   const professionalDraft = created.goal.pendingDraft.draft;
   assertMeaningPreserved(professionalDraft);
+  const ownerDraftBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[0].recoveryCode } });
+  const ownerDraftThread = ownerDraftBootstrap.body.threads.find(thread => thread.goalId === goalId);
+  assert.match(ownerDraftThread.title, /Friday/i, 'the owner should see a useful private-safe draft title');
+  assert.equal(ownerDraftThread.displayStatus, 'Ready for approval');
+  assert.equal(ownerDraftThread.statusKey, 'approval');
+  assert.equal(ownerDraftThread.actionRequired, true);
+  assert.doesNotMatch([ownerDraftThread.title, ownerDraftThread.summary, ownerDraftThread.peerLabel, ownerDraftThread.displayStatus].join(' '), /\bA[0-9a-f]{4,64}\b/i, 'presentation fields must not expose profile IDs');
 
   owner.send({ type: 'redraft', goalId, tone: 'friendly' });
   const friendlyUpdate = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
@@ -135,6 +142,11 @@ try {
   assert.equal(joined.goal.participants.length, 2);
   assert.equal(joined.goal.privateNotes.length, 0, 'private owner text must not cross profiles');
   assert.equal(joined.goal.thread[0].privateOriginal, null, 'private originals must not cross profiles');
+  const joinedBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[1].recoveryCode } });
+  const joinedThread = joinedBootstrap.body.threads.find(thread => thread.goalId === goalId);
+  assert.equal(joinedThread.title, ownerApproved.goal.title, 'both participants should receive the stable approved title');
+  assert.equal(joinedThread.displayStatus, 'Needs your response');
+  assert.equal(joinedThread.actionRequired, true);
 
   outsider.send({ type: 'claim-invite', invite });
   const denied = await outsider.wait(message => message.type === 'error' && message.action === 'claim-invite');
@@ -200,8 +212,12 @@ try {
   });
   const attributionCreated = await owner.wait(message => message.type === 'goal-created' && message.goal.id !== goalId);
   const attributionGoalId = attributionCreated.goal.id;
+  const preApprovalPeerBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[1].recoveryCode } });
+  const preApprovalPeerThread = preApprovalPeerBootstrap.body.threads.find(thread => thread.goalId === attributionGoalId);
+  assert.match(preApprovalPeerThread.title, /^Conversation with /);
+  assert.doesNotMatch(preApprovalPeerThread.title + ' ' + preApprovalPeerThread.summary, /tight spot|500 units/i, 'an unapproved draft must not appear in the recipient conversation list');
   owner.send({ type: 'approve-outbound', goalId: attributionGoalId });
-  await participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 1);
+  const attributionApproved = await participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 1);
   const attributionOwnerView = owner.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 2);
   const attributionSenderView = participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 2);
   participant.send({ type: 'draft-reply', goalId: attributionGoalId, text: 'reason why?' });
@@ -211,6 +227,8 @@ try {
   assert.doesNotMatch(clarification, /\bI(?:'m| am) in a tight spot|\bI need 500/i, 'the reply must not adopt the other person\'s claim');
   assert.equal(attributionReply.goal.thread.at(-1).privateOriginal, null);
   assert.equal(attributionPrivate.goal.thread.at(-1).privateOriginal, 'reason why?');
+  const stableTitleBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[0].recoveryCode } });
+  assert.equal(stableTitleBootstrap.body.threads.find(thread => thread.goalId === attributionGoalId).title, attributionApproved.goal.title, 'later replies must not replace the approved conversation title');
   const boundaryOwnerView = owner.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 3);
   const boundaryPeerView = participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 3);
   owner.send({ type: 'draft-reply', goalId: attributionGoalId, text: "I'm not comfortable sharing that. Cancel my request." });
