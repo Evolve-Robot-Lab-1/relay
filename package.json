@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "start": "node server.js"
+    "check": "node tests/client-syntax.mjs && wrangler deploy --dry-run",
+    "test:e2e": "node tests/e2e.mjs",
+    "start": "wrangler dev"
   },
   "devDependencies": {
     "wrangler": "^4.112.0"

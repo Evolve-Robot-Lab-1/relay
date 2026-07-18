@@ -6,57 +6,67 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 
 - URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `6144d619-f60a-4e64-bcf6-847782fd7099`
-- Emergency rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
+- Active version: `d2f7acff-3fd4-4ad0-8cf3-dc4e1c40b4dc`
+- Release marker: `outcome-v1`
+- Previous outcome release: `82704afa-b598-4da2-aca9-43bf1b3a4685`
+- Pre-MVP rollback version: `6144d619-f60a-4e64-bcf6-847782fd7099`
+- Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
 
-## Current Architecture
+## Product Rule
 
-- `server.ts` contains the Worker, WebSocket protocol, AI drafting, API routes, and embedded browser client.
-- `RELAY_STORE` is a SQLite-backed Durable Object and owns all new writable state.
-- `AGENTS_KV` is retained as a read-only fallback for records created before the Durable Object migration.
-- `AI` uses `@cf/meta/llama-3.1-8b-instruct-fp8` for message drafting.
-- The browser uses WebSocket push when available and a 2-second poll as fallback.
+Relay improves communication without forcing agreement. It preserves intent, applies the selected tone, protects private instructions, and keeps approved messages short and natural.
 
-## Incident And Recovery
+A conversation result may be an agreement, answer, clarification, rejection, delivered request, communicated boundary, or closure. Resolve and Close are general outcomes. Both participants see Confirm details only when Relay classifies the result as a mutual commitment.
 
-The production rewrite initially contained invalid generated browser JavaScript and an undefined polling renderer. After those were repaired, Generate Link still failed because the Cloudflare KV daily write quota had been exhausted. The Worker attempted both its normal save and fallback save against KV, then returned no WebSocket response.
+## Architecture
 
-The recovery completed these changes:
+- `server.ts` serves the nonce-protected client and forwards API/WebSocket traffic to one Durable Object.
+- `backend.ts` owns recovery authentication, profiles, goals, contacts, blocks, AI drafting, and all WebSocket mutations.
+- `ui.ts` is a DOM-safe browser client with no dynamic `innerHTML` or inline event handlers.
+- `RELAY_STORE` is the SQLite-backed Durable Object and owns all writable state.
+- `AGENTS_KV` remains a read-only fallback for legacy records.
+- `AI` uses `@cf/meta/llama-3.1-8b-instruct-fp8`.
 
-- Repaired generated JavaScript escaping and browser script startup.
-- Added missing `/api/threads` and `/api/contacts` routes.
-- Prevented overlapping poll requests and pushed fresh thread snapshots through WebSocket.
-- Migrated writable state from KV to a SQLite-backed Durable Object.
-- Preserved legacy KV reads so existing users and conversations remain available.
-- Added tombstones so deleted legacy records do not reappear.
-- Deduplicated name writes and reduced polling from 500 ms to 2 seconds.
-- Added Generate Link loading, timeout, and visible error states.
-- Removed the orphaned `G89264f` entry from agent `A6101`.
+## Identity And Recovery
+
+- A high-entropy profile and private recovery code are created without signup.
+- Only the SHA-256 recovery secret hash is stored server-side.
+- The recovery code restores the same profile, contacts, and conversations on another device.
+- Chrome or Gmail profile sync is not treated as authentication; the recovery code is required across devices.
+- A browser carrying a legacy `aid` can claim that identity once and preserve its old records.
+
+## Conversation Guarantees
+
+- Invite URLs contain a high-entropy secret and are atomically claimed by one authenticated participant.
+- Conversations have exactly two participant slots; third-party claims return no metadata.
+- Private instructions are serialized only to their owner.
+- Shared messages use stable IDs. Only the sender can delete one, and deletion is pushed to both participants.
+- Remove hides a conversation for one profile. Delete for all is creator-only.
+- Contacts are server-authoritative, survive recovery, and support Remove, Block, and Unblock.
+- Legacy self-contact records are removed automatically.
+- Mutations are serialized per conversation to prevent concurrent claim or reply overwrites.
 
 ## Verification
 
-The deployed production flow was tested end to end:
+Both local and production end-to-end suites passed on the active release:
 
-1. WebSocket returns `welcome`.
-2. Generate Link returns `goal-created` with a share URL.
-3. `/api/poll` returns the persisted pending draft.
-4. Goal deletion succeeds and the following poll returns `404`.
-5. The temporary verification records were deleted.
+1. Recovery profile creation, restore, and authenticated bootstrap.
+2. Owner-only private instructions.
+3. Simultaneous invite claims with exactly one winner.
+4. Permanent contacts for both participants and generic third-party denial.
+5. Real-time sender deletion on both clients.
+6. Result resolution, conditional confirmation, and reopening.
+7. Remove for me and creator delete for everyone.
+8. Temporary test conversations deleted after verification.
 
-## Local Development
+The generated browser JavaScript is parsed separately before every dry-run build to prevent template-escaping regressions.
+
+## Commands
 
 ```bash
 npm ci
+npm run check
 npm run dev
-```
-
-Wrangler local mode does not fully emulate the remote Workers AI binding. The raw-message fallback still allows the storage and WebSocket flow to be tested locally.
-
-## Deployment
-
-```bash
-npx wrangler login
+npm run test:e2e -- http://127.0.0.1:8787
 npm run deploy
 ```
-
-After deployment, verify the version ID, the production page, `/api/threads`, `/api/contacts`, and one complete Generate Link transaction.
