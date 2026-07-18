@@ -112,7 +112,7 @@ function preservesExplicitIntent(raw: string, draft: string) {
   const namedDates = source.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || [];
   if (!namedDates.every(value => new RegExp(`\\b${value}\\b`).test(output))) return false;
   if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return false;
-  if (/(not comfortable|rather not|do not want|don't want).{0,30}(share|disclos|tell)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|won't|will not|cannot|can't|can’t).{0,50}(share|disclos|tell|provide)|keep.{0,20}private/.test(output)) return false;
+  if (/(not comfortable|rather not|do not want|don't want).{0,40}(shar|disclos|tell|provide|discuss)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|do not wish|don't wish|won't|will not|cannot|can't|can’t|decline).{0,60}(shar|disclos|tell|provide|discuss|detail|information)|keep.{0,20}private/.test(output)) return false;
   if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return false;
   return true;
 }

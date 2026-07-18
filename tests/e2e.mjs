@@ -234,7 +234,7 @@ try {
   owner.send({ type: 'draft-reply', goalId: attributionGoalId, text: "I'm not comfortable sharing that. Cancel my request." });
   const [boundarySender, boundaryPeer] = await Promise.all([boundaryOwnerView, boundaryPeerView]);
   const boundary = boundarySender.goal.thread.at(-1).text;
-  assert.match(boundary, /prefer not|not comfortable|rather not|don't want|do not want|can(?:not|'t|’t) (?:share|disclose|provide)|keep .{0,20}private/i, 'the reply should preserve the user\'s boundary');
+  assert.match(boundary, /prefer not|not comfortable|rather not|don't want|do not want|do not wish|don't wish|can(?:not|'t|’t) (?:share|disclose|provide)|keep .{0,20}private/i, 'the reply should preserve the user\'s boundary');
   assert.match(boundary, /cancel|withdraw/i, 'the reply should preserve the cancellation');
   assert.doesNotMatch(boundary, /agree|happy to|glad to/i, 'the reply must not force agreement or enthusiasm');
   assert.equal(boundarySender.goal.thread.at(-1).privateOriginal, "I'm not comfortable sharing that. Cancel my request.");
