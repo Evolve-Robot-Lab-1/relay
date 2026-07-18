@@ -7,8 +7,8 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 - Primary URL: https://relay.durgaai.com
 - Worker URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `768d6173-3de4-421f-96b9-0d4f48b236f4`
-- Git commit: `b2b33d3` (`fix: simplify conversation privacy preview`)
+- Active version: `3c7e50ed-28da-43d2-b447-a5448bf4d80c`
+- Git commit: `043ac7b` (`fix: copy invite links without share copy`)
 - Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
 - Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
 - Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
@@ -81,7 +81,7 @@ New invite links use `https://relay.durgaai.com/i/<token>`, where the token is a
 - The first successful claim atomically invalidates the link.
 - Rotation and conversation deletion invalidate and remove the active mapping.
 - Simultaneous claims are serialized by conversation, including mixed legacy/new claims.
-- Native sharing and copied invites say: `Your response is needed. Join our private Relay conversation.` Copy remains the fallback when native sharing is unavailable.
+- Native Share uses `Your response is needed. Join our private Relay conversation.` with the URL as a separate field. Clipboard fallback copies only the short URL.
 
 Opening a short link shows the Relay header, a privacy-safe conversation waiting state, and the Join conversation name popup. After the name is saved, Relay claims the invite and opens that conversation directly.
 
