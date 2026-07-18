@@ -271,13 +271,30 @@ try {
   assert.equal(await evaluate(`document.querySelector('#conversation-actions').classList.contains('hidden')`), false);
   assert.equal(await evaluate(`document.querySelector('#share-button').classList.contains('hidden')`), false);
   console.log('Browser: first message approved');
-  assert.equal(await evaluate(`document.querySelector('#message-list .message.mine .message-original')?.textContent`), 'You said: "Meet Friday at 3pm in the main office."');
+  const singleConversationScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-single-conversation.png', Buffer.from(singleConversationScreenshot.data, 'base64'));
+  assert.equal(await evaluate(`document.querySelector('#message-list .message.mine .private-label')?.textContent`), 'Only you can see this');
+  assert.equal(await evaluate(`document.querySelector('#message-list .message.mine .original-text')?.textContent`), 'You said: "Meet Friday at 3pm in the main office."');
   assert.equal(await evaluate(`document.querySelector('#representative-toggle').textContent`), 'Representative ON');
 
-  await evaluate(`document.querySelector('#shared-tab').click()`);
-  assert.equal(await evaluate(`document.querySelector('#message-list .message-original')`), null, 'Shared view exposed a private original.');
-  assert.ok((await evaluate(`document.querySelector('#private-tab').textContent`)).includes('Private'));
-  assert.ok((await evaluate(`document.querySelector('#shared-tab').textContent`)).includes('Shared'));
+  assert.equal(await evaluate(`document.querySelector('#private-tab')`), null, 'The permanent Private tab should be removed.');
+  assert.equal(await evaluate(`document.querySelector('#shared-tab')`), null, 'The permanent Shared tab should be removed.');
+  assert.equal(await evaluate(`document.querySelector('#shared-preview-button').classList.contains('hidden')`), false);
+  await evaluate(`document.querySelector('#shared-preview-button').click()`);
+  assert.equal(await evaluate(`document.querySelector('#shared-preview-banner').classList.contains('hidden')`), false);
+  assert.equal(await evaluate(`document.querySelector('#shared-preview-button').getAttribute('aria-pressed')`), 'true');
+  assert.equal(await evaluate(`document.querySelector('#message-list .message-original')`), null, 'Shared preview exposed a private original.');
+  assert.equal(await evaluate(`document.querySelector('#message-list .message-delete')`), null, 'Shared preview should be read-only.');
+  assert.equal(await evaluate(`document.querySelector('#composer-area').classList.contains('hidden')`), true, 'Shared preview should hide the composer.');
+  const sharedPreviewScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-shared-preview.png', Buffer.from(sharedPreviewScreenshot.data, 'base64'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+  const mobileSharedPreviewScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-shared-preview-mobile.png', Buffer.from(mobileSharedPreviewScreenshot.data, 'base64'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
+  await evaluate(`document.querySelector('#shared-preview-banner [data-action="toggle-shared-preview"]').click()`);
+  assert.equal(await evaluate(`document.querySelector('#shared-preview-banner').classList.contains('hidden')`), true);
+  assert.equal(await evaluate(`document.querySelector('#message-list .message-original') !== null`), true, 'Exiting preview should restore the private original.');
 
   await evaluate(`document.querySelector('[data-action="go-home"]').click()`);
   await waitFor(`document.querySelectorAll('#thread-list .conversation-row').length === 1`, 'Conversation did not appear on the home screen.');
@@ -304,7 +321,7 @@ try {
   await waitFor(`!document.querySelector('#conversation-view').hidden`, 'The browser test conversation did not reopen for cleanup.');
   await evaluate(`document.querySelector('[data-action="delete-everyone"]').click()`);
   await waitFor(`!document.querySelector('#home-view').hidden && document.querySelectorAll('#thread-list .conversation-row').length === 0`, 'The browser test conversation was not deleted.');
-  console.log('Browser E2E passed: focused invite naming, brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
+  console.log('Browser E2E passed: focused invite naming, brand, empty/manage states, approval placement, visible tone rewrite, single-conversation privacy preview, message styling, Representative control, Contacts tab, and mobile rendering.');
 } catch (error) {
   console.error('Browser E2E failed:', error?.stack || error);
   if (chromeError) console.error(chromeError);

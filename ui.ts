@@ -110,9 +110,9 @@ export const HTML = `<!doctype html>
     .convo-head h1{font-size:18px;margin:0 0 7px;overflow-wrap:anywhere}
     .convo-meta{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:12px}
     .convo-actions{display:flex;gap:6px}
-    .tabs{display:grid;grid-template-columns:1fr 1fr;margin:14px 0;border-bottom:1px solid var(--line)}
-    .tab{height:44px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px}
-    .tab.active{color:var(--text);border-bottom-color:var(--green)}
+    .small-icon-btn{width:30px;height:30px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:4px;display:inline-grid;place-items:center}
+    .small-icon-btn:hover{border-color:#435047;color:var(--text)}
+    .preview-banner{min-height:44px;margin:14px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #176d48;border-bottom:1px solid #176d48;color:var(--green);font-size:12px;font-weight:700}
     .result-panel{background:var(--panel);border-left:3px solid var(--amber);padding:13px 14px;margin:14px 0}
     .result-panel.confirmed{border-left-color:var(--green)}
     .result-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
@@ -126,7 +126,9 @@ export const HTML = `<!doctype html>
     .message.mine{margin-left:auto;text-align:right;background:#0d2137;border-color:#0055aa}
     .message .who{font-size:10px;color:var(--muted);font-weight:800;text-transform:uppercase;margin-bottom:4px}
     .message.mine .who{color:#4488ff}.message:not(.mine) .who{color:#ff6644}
-    .message-original{font-size:11px;color:#66717a;font-style:italic;margin-top:6px;border-top:1px solid #33404b;padding-top:5px}
+    .message-original{font-size:11px;color:#7b8780;margin-top:6px;border-top:1px solid #33404b;padding-top:6px}
+    .private-label{color:var(--green);font-size:10px;font-style:normal;font-weight:800;text-transform:uppercase;margin-bottom:2px}
+    .original-text{font-style:italic}
     .message .when{font-size:10px;color:#66716a;margin-top:5px}
     .message-delete{position:absolute;right:5px;top:5px;width:26px;height:26px;border:0;background:transparent;color:#718078;font-size:18px;border-radius:4px}
     .message-delete:hover{background:#ffffff0b;color:var(--red)}
@@ -190,9 +192,9 @@ export const HTML = `<!doctype html>
       <button class="back" type="button" data-action="go-home"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>Back</button>
       <div class="convo-head">
         <div><h1 id="conversation-title">Conversation</h1><div class="convo-meta"><span id="conversation-status" class="badge">Draft</span><span id="conversation-peer"></span></div></div>
-        <div id="conversation-actions" class="convo-actions"><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
+        <div id="conversation-actions" class="convo-actions"><button id="shared-preview-button" class="small-icon-btn hidden" type="button" data-action="toggle-shared-preview" title="Preview what they see" aria-label="Preview what they see" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12"></path><circle cx="12" cy="12" r="3"></circle></svg></button><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
       </div>
-      <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Private</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"></path></svg>Shared</button></div>
+      <div id="shared-preview-banner" class="preview-banner hidden"><span>Viewing what the other person sees</span><button class="small-btn" type="button" data-action="toggle-shared-preview">Exit preview</button></div>
       <section id="draft-card" class="draft-card hidden">
         <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-original" class="draft-original"></div><div id="draft-facts" class="facts"></div>
         <div id="tone-options" class="tone-options"><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="professional">Professional</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="friendly">Friendly</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="direct">Direct</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="casual">Casual</button></div>
@@ -255,7 +257,7 @@ export const HTML = `<!doctype html>
   (() => {
     'use strict';
     const pathInvite = /^\\/i\\/([A-Za-z0-9_-]{22})\\/?$/.exec(location.pathname)?.[1] || null;
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: pathInvite || new URLSearchParams(location.search).get('invite'), inviteClaiming: false, homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: pathInvite || new URLSearchParams(location.search).get('invite'), inviteClaiming: false, homeTab: 'conversations', previewShared: false, welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const labelFor = profile => profile ? profile.name || 'Other person' : 'Waiting for participant';
@@ -592,6 +594,7 @@ export const HTML = `<!doctype html>
     }
 
     function showConversation() {
+      state.previewShared = false;
       byId('home-view').hidden = true;
       byId('conversation-view').hidden = false;
       renderConversation();
@@ -599,6 +602,7 @@ export const HTML = `<!doctype html>
 
     function goHome() {
       state.goal = null;
+      state.previewShared = false;
       byId('conversation-view').hidden = true;
       byId('home-view').hidden = false;
       renderHome();
@@ -611,15 +615,19 @@ export const HTML = `<!doctype html>
       byId('conversation-title').textContent = goal.title || labelFor(peer);
       byId('conversation-peer').textContent = peer ? labelFor(peer) : 'Invite not claimed';
       const status = byId('conversation-status'); status.textContent = statusLabels[goal.status] || goal.status; status.className = 'badge ' + goal.status;
-      byId('conversation-actions').classList.toggle('hidden', Boolean(goal.pendingDraft && goal.thread.length === 0));
+      const canPreview = goal.thread.some(message => message.from === state.profile.id && Boolean(message.privateOriginal));
+      if (!canPreview) state.previewShared = false;
+      byId('conversation-actions').classList.toggle('hidden', state.previewShared || Boolean(goal.pendingDraft && goal.thread.length === 0));
+      const previewButton = byId('shared-preview-button');
+      previewButton.classList.toggle('hidden', !canPreview);
+      previewButton.setAttribute('aria-pressed', String(state.previewShared));
+      byId('shared-preview-banner').classList.toggle('hidden', !state.previewShared);
       byId('share-button').classList.toggle('hidden', !goal.canInvite);
       byId('delete-everyone-button').classList.toggle('hidden', !goal.canDeleteEveryone);
-      byId('private-tab').classList.toggle('active', state.tab === 'private');
-      byId('shared-tab').classList.toggle('active', state.tab === 'shared');
       renderResult(goal);
       renderMessages(goal);
       renderDraft(goal);
-      byId('composer-area').classList.toggle('hidden', ['resolved','closed'].includes(goal.status) || Boolean(goal.pendingDraft));
+      byId('composer-area').classList.toggle('hidden', state.previewShared || ['resolved','closed'].includes(goal.status) || Boolean(goal.pendingDraft));
       const representative = goal.representativeMode !== false;
       const toggle = byId('representative-toggle'); toggle.textContent = representative ? 'Representative ON' : 'Representative OFF'; toggle.classList.toggle('off', !representative);
       const reply = byId('reply-button');
@@ -642,7 +650,7 @@ export const HTML = `<!doctype html>
       byId('result-summary').textContent = result.summary || 'No clear result yet.';
       const facts = byId('result-facts'); facts.replaceChildren();
       [['date','Date'],['time','Time'],['location','Location']].forEach(([key,label]) => { if (result[key]) facts.append(node('span', 'fact', label + ': ' + result[key])); });
-      const actions = byId('result-actions'); actions.replaceChildren();
+      const actions = byId('result-actions'); actions.replaceChildren(); actions.classList.toggle('hidden', state.previewShared);
       if (['confirmed','resolved','closed'].includes(result.status)) {
         actions.append(actionButton('Continue conversation', 'continue-conversation', 'secondary'));
         return;
@@ -663,9 +671,13 @@ export const HTML = `<!doctype html>
         const mine = message.from === state.profile.id;
         const item = node('article', 'message' + (mine ? ' mine' : ''));
         item.append(node('div', 'who', mine ? 'You' : labelFor(goal.participants.find(profile => profile.id === message.from))), node('div', '', message.text));
-        if (mine && state.tab === 'private' && message.privateOriginal) item.append(node('div', 'message-original', 'You said: "' + message.privateOriginal + '"'));
+        if (mine && !state.previewShared && message.privateOriginal) {
+          const original = node('div', 'message-original');
+          original.append(node('div', 'private-label', 'Only you can see this'), node('div', 'original-text', 'You said: "' + message.privateOriginal + '"'));
+          item.append(original);
+        }
         item.append(node('div', 'when', new Date(message.createdAt).toLocaleString()));
-        if (mine) {
+        if (mine && !state.previewShared) {
           const remove = actionButton('\\u00d7', 'delete-message', 'message-delete'); remove.dataset.messageId = message.id; remove.title = 'Delete message'; remove.setAttribute('aria-label', 'Delete message'); item.append(remove);
         }
         list.append(item);
@@ -778,7 +790,7 @@ export const HTML = `<!doctype html>
       if (action === 'block-contact') { if (confirm('Block this profile? New direct conversations and invites will be rejected.')) send({ type:'block-contact', contactId:target.dataset.contactId }); return; }
       if (action === 'unblock-contact') return send({ type:'unblock-contact', contactId:target.dataset.contactId });
       if (!state.goal) return;
-      if (action === 'set-tab') { state.tab = target.dataset.tab; renderConversation(); return; }
+      if (action === 'toggle-shared-preview') { state.previewShared = !state.previewShared; renderConversation(); return; }
       if (action === 'draft-reply') {
         const text = byId('reply-input').value.trim(); if (!text || state.replySending) return;
         state.replySending = true; renderConversation();
