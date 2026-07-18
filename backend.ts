@@ -98,7 +98,7 @@ function preservesExplicitIntent(raw: string, draft: string) {
   const numbers = source.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
   if (!numbers.every(number => output.includes(number))) return false;
   if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return false;
-  if (/(not comfortable|rather not|do not want|don't want).{0,30}(share|disclos|tell)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|won't|will not).{0,40}(share|disclos|tell)|keep.{0,20}private/.test(output)) return false;
+  if (/(not comfortable|rather not|do not want|don't want).{0,30}(share|disclos|tell)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|won't|will not|cannot|can't|can’t).{0,50}(share|disclos|tell|provide)|keep.{0,20}private/.test(output)) return false;
   if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return false;
   return true;
 }
@@ -936,14 +936,15 @@ For a multi-part instruction, include every independent intent. Example: if the 
 
 Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
     const previous = cleanText(previousDraft);
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const modelCount = this.rewriteModelCount();
+    for (let attempt = 0; attempt < modelCount * 2; attempt += 1) {
       try {
         const retryRule = attempt ? previous ? '\nThe prior draft did not visibly change. Return JSON only and restyle it with clearly different wording while preserving the exact same message.' : '\nThe previous response was invalid. Return only {"draft":"..."}.' : '';
         const messages = [
           { role: 'system', content: prompt },
           { role: 'user', content: `Message type: ${messageKind}\nRecipient: ${peerId || 'not joined'}\nOther person's latest message:\n${latestOtherMessage}\n\nConversation context (reference only):\n${history}\n\nUser's private intent for this outgoing message:\n${raw}${previous ? `\n\nPrevious draft to restyle:\n${previous}` : ''}${retryRule}` }
         ];
-        let response = cleanText(await this.runRewriteModel(messages), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let response = cleanText(await this.runRewriteModel(messages, attempt % modelCount), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         const start = response.indexOf('{');
         const end = response.lastIndexOf('}');
         if (start >= 0 && end > start) response = response.slice(start, end + 1);
@@ -966,55 +967,49 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
     throw new Error('Relay could not rewrite this message. Your private message was not sent. Please try again.');
   }
 
-  async runRewriteModel(messages: any[]) {
-    if (this.env.GROQ_API_KEY) {
-      for (const model of GROQ_AI_MODELS) {
-        try {
-          const response = await fetch(GROQ_CHAT_URL, {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${this.env.GROQ_API_KEY}`,
-              'content-type': 'application/json'
-            },
-            body: JSON.stringify({
-              model,
-              messages,
-              temperature: 0.2,
-              max_completion_tokens: 450,
-              reasoning_effort: 'low',
-              response_format: { type: 'json_object' }
-            })
-          });
-          const data: any = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(cleanText(data?.error?.message, 240) || `Groq returned HTTP ${response.status}.`);
-          const content = cleanText(data?.choices?.[0]?.message?.content, 10_000);
-          if (!content) throw new Error('Groq returned an empty response.');
-          return content;
-        } catch (error: any) {
-          console.warn(`Groq ${model} rewrite failed:`, cleanText(error?.message, 300) || 'Unknown Groq error.');
-        }
-      }
-      console.warn('Groq models unavailable; using Workers AI fallback.');
+  rewriteModelCount() {
+    return (this.env.GROQ_API_KEY ? GROQ_AI_MODELS.length : 0) + (this.env.AI ? CLOUDFLARE_AI_MODELS.length : 0);
+  }
+
+  async runRewriteModel(messages: any[], modelIndex: number) {
+    const groqCount = this.env.GROQ_API_KEY ? GROQ_AI_MODELS.length : 0;
+    if (modelIndex < groqCount) {
+      const model = GROQ_AI_MODELS[modelIndex];
+      const response = await fetch(GROQ_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.env.GROQ_API_KEY}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.2,
+          max_completion_tokens: 450,
+          reasoning_effort: 'low',
+          response_format: { type: 'json_object' }
+        })
+      });
+      const data: any = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(`${model}: ${cleanText(data?.error?.message, 240) || `Groq returned HTTP ${response.status}.`}`);
+      const content = cleanText(data?.choices?.[0]?.message?.content, 10_000);
+      if (!content) throw new Error(`${model}: Groq returned an empty response.`);
+      return content;
     }
 
-    if (!this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    const cloudflareIndex = modelIndex - groqCount;
+    const model = CLOUDFLARE_AI_MODELS[cloudflareIndex];
+    if (!this.env.AI || !model) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
     const instructions = cleanText(messages.find(message => message.role === 'system')?.content, 10_000);
     const input = cleanText(messages.find(message => message.role === 'user')?.content, 10_000);
-    for (const model of CLOUDFLARE_AI_MODELS) {
-      try {
-        const result = await this.env.AI.run(model, {
-          instructions,
-          input,
-          reasoning: { effort: 'low' },
-          max_output_tokens: 1800
-        });
-        const content = modelResultText(result);
-        if (!content) throw new Error('The model returned an empty response.');
-        return content;
-      } catch (error: any) {
-        console.warn(`Workers AI ${model} rewrite failed:`, cleanText(error?.message, 300) || 'Unknown Workers AI error.');
-      }
-    }
-    throw new Error('Workers AI models are temporarily unavailable.');
+    const result = await this.env.AI.run(model, {
+      instructions,
+      input,
+      reasoning: { effort: 'low' },
+      max_output_tokens: 1800
+    });
+    const content = modelResultText(result);
+    if (!content) throw new Error(`${model}: The model returned an empty response.`);
+    return content;
   }
 }
