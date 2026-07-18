@@ -46,6 +46,7 @@ Relay never invents facts, promises, commitments, consent, or enthusiasm. It nev
 
 ## Files
 
+- `RELAY_BUILD_WEEK.md` - product vision, Build Week narrative, demo plan, submission copy, risks, and roadmap
 - `server.ts` - Worker entry point, security headers, and Durable Object routing
 - `backend.ts` - authentication, persistence, AI drafting, contacts, and WebSocket protocol
 - `ui.ts` - embedded browser application

@@ -26,6 +26,13 @@ Relay improves communication without forcing agreement. It preserves intent, app
 
 A conversation result may be an agreement, answer, clarification, rejection, delivered request, communicated boundary, or closure. Resolve and Close are general outcomes. Both participants see Confirm details only when Relay classifies the result as a mutual commitment.
 
+## Build Week Documentation
+
+- `RELAY_BUILD_WEEK.md` is the source document for Relay's product vision, problem, user flow, AI behavior, privacy model, architecture, differentiation, demo story, judging alignment, submission copy, metrics, risks, and roadmap.
+- OpenAI Build Week lists July 21, 2026 as the submission deadline and evaluates technical implementation, design and user experience, potential impact, and idea quality.
+- Relay was built and hardened with Codex. Production inference currently uses Groq and Workers AI, not the OpenAI API; the submission must state this accurately.
+- The highest-priority hackathon decision is whether to add and evaluate GPT-5.6 as the primary generator or an independent fallback before submission.
+
 ## Architecture
 
 - `server.ts` serves the nonce-protected client and forwards API/WebSocket traffic to one Durable Object.
