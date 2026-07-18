@@ -37,6 +37,11 @@ export const HTML = `<!doctype html>
     .icon-btn{width:44px;height:44px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:var(--radius);display:inline-grid;place-items:center}
     .icon-btn:hover{border-color:#435047;background:var(--panel2)}
     .view[hidden],.hidden{display:none!important}
+    .name-banner{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,auto);gap:16px;align-items:center;border-bottom:1px solid var(--line);padding:0 0 18px;margin-bottom:18px}
+    .name-banner strong{display:block;font-size:14px}
+    .name-banner span{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+    .name-banner-form{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:8px;align-items:center}
+    .name-banner-form input{height:40px}
     .section{margin-top:24px}
     .home-tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);margin:2px 0 18px}
     .home-tab{height:44px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px}
@@ -138,7 +143,7 @@ export const HTML = `<!doctype html>
     .representative-toggle.off{border-color:var(--line);background:#101211;color:var(--muted)}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.brand{font-size:20px}.tagline{font-size:11px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.conversation-row{grid-template-columns:minmax(0,1fr) auto}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.brand{font-size:20px}.tagline{font-size:11px}.name-banner{grid-template-columns:1fr;gap:10px}.name-banner-form{grid-template-columns:minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.conversation-row{grid-template-columns:minmax(0,1fr) auto}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
   </style>
 </head>
 <body>
@@ -147,6 +152,11 @@ export const HTML = `<!doctype html>
       <div class="brand-group"><img class="brand-logo" src="/relay-mark.png" alt=""><div class="header-copy"><div class="brand">RELAY</div><div id="tagline" class="tagline">say it better.</div></div><span id="connection" class="sr-only" aria-live="polite">Connecting</span></div>
       <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 0 0-16 0"></path></svg></button>
     </header>
+
+    <section id="name-banner" class="name-banner hidden" aria-labelledby="name-banner-title">
+      <div><strong id="name-banner-title">Choose your display name</strong><span>This is how people in your conversations will know you.</span></div>
+      <div class="name-banner-form"><label class="sr-only" for="onboarding-name">Display name</label><input id="onboarding-name" maxlength="48" placeholder="Your name" autocomplete="name"><button id="save-onboarding-name" class="primary" type="button" data-action="save-onboarding-name">Save</button></div>
+    </section>
 
     <section id="home-view" class="view">
       <div id="protect-banner" class="protect hidden">
@@ -223,7 +233,7 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const labelFor = profile => profile ? profile.name || 'Other person' : 'Waiting for participant';
@@ -411,23 +421,29 @@ export const HTML = `<!doctype html>
       if (message.type === 'error') {
         byId('create-button').disabled = false;
         state.toneUpdating = false;
+        if (message.action === 'set-name') state.nameSaving = false;
         if (message.action === 'draft-reply') state.replySending = false;
         if (state.goal) renderConversation();
+        renderNameBanner();
         toast(message.message || 'The action could not be completed.');
       }
     }
 
     function applyBootstrap(data) {
+      const savedName = state.nameSaving;
       state.profile = data.profile;
+      state.nameSaving = false;
       state.threads = (data.threads || []).map(thread => ({ ...thread, status:thread.status === 'agreed' ? 'resolved' : thread.status === 'proposed' ? 'active' : thread.status }));
       state.contacts = data.contacts || [];
       state.blocks = data.blocks || [];
       if (!state.threads.length) state.managingThreads = false;
       renderHome();
       renderProfile();
+      if (savedName && state.profile?.name) toast('Name saved.');
     }
 
     function renderHome() {
+      renderNameBanner();
       renderThreads();
       renderContacts();
       byId('home-conversations-tab').classList.toggle('active', state.homeTab === 'conversations');
@@ -439,6 +455,15 @@ export const HTML = `<!doctype html>
       manage.textContent = state.managingThreads ? 'Done' : 'Manage';
       const useful = state.threads.some(thread => ['active','confirming','resolved','closed'].includes(thread.status));
       byId('protect-banner').classList.toggle('hidden', !useful || localStorage.getItem('relayRecoveryAcknowledged') === '1');
+    }
+
+    function renderNameBanner() {
+      const banner = byId('name-banner');
+      const needsName = Boolean(state.profile && !state.profile.name?.trim());
+      banner.classList.toggle('hidden', !needsName);
+      const button = byId('save-onboarding-name');
+      button.disabled = state.nameSaving;
+      button.textContent = state.nameSaving ? 'Saving...' : 'Save';
     }
 
     function renderThreads() {
@@ -636,6 +661,13 @@ export const HTML = `<!doctype html>
       }
       if (action === 'open-restore') { byId('profile-dialog').close(); byId('restore-dialog').showModal(); return; }
       if (action === 'copy-recovery') return copyText(state.recovery, 'Recovery code copied.');
+      if (action === 'save-onboarding-name') {
+        const name = byId('onboarding-name').value.trim();
+        if (!name) return toast('Enter a display name.');
+        state.nameSaving = true; renderNameBanner();
+        if (!send({ type:'set-name', name })) { state.nameSaving = false; renderNameBanner(); }
+        return;
+      }
       if (action === 'save-name') return send({ type:'set-name', name:byId('display-name').value });
       if (action === 'new-profile') { localStorage.removeItem('aid'); state.recovery = ''; localStorage.removeItem('relayRecovery'); createProfile(true).catch(error => toast(error.message)); return; }
       if (action === 'restore-profile') return restoreProfile();
@@ -679,6 +711,7 @@ export const HTML = `<!doctype html>
 
     byId('reply-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('[data-action="draft-reply"]').click(); } });
     byId('new-message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('create-button').click(); } });
+    byId('onboarding-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); byId('save-onboarding-name').click(); } });
     byId('profile-button').addEventListener('click', () => document.querySelector('[data-action="open-profile"]').click());
     start();
   })();

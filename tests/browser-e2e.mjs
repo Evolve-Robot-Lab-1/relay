@@ -123,6 +123,17 @@ try {
 
   await waitFor(`document.querySelector('#connection')?.textContent === 'Connected'`, 'Profile did not connect.');
   console.log('Browser: Relay profile connected');
+  assert.equal(await evaluate(`document.querySelector('#name-banner').classList.contains('hidden')`), false, 'A new profile must see the display-name banner.');
+  assert.equal(await evaluate(`document.querySelector('#name-banner-title').textContent`), 'Choose your display name');
+  const onboardingScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-onboarding.png', Buffer.from(onboardingScreenshot.data, 'base64'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+  const mobileOnboardingScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+  await writeFile('/tmp/relay-local-onboarding-mobile.png', Buffer.from(mobileOnboardingScreenshot.data, 'base64'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
+  await evaluate(`document.querySelector('#onboarding-name').value = 'Browser Test'; document.querySelector('#save-onboarding-name').click()`);
+  await waitFor(`document.querySelector('#name-banner').classList.contains('hidden')`, 'Display name did not save or the banner did not close.');
+  console.log('Browser: display name saved');
   assert.equal(await evaluate(`document.querySelector('.brand')?.textContent`), 'RELAY');
   assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'say it better.');
   assert.equal(await evaluate(`document.querySelector('header')?.innerText.includes('Private')`), false, 'Private must not appear beside the brand.');
@@ -190,7 +201,7 @@ try {
 
   const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-mobile.png', Buffer.from(screenshot.data, 'base64'));
-  console.log('Browser E2E passed: brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
+  console.log('Browser E2E passed: new-user naming, brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
 } catch (error) {
   console.error('Browser E2E failed:', error?.stack || error);
   if (chromeError) console.error(chromeError);
