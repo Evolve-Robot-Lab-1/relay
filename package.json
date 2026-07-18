@@ -8,6 +8,7 @@
     "deploy": "wrangler deploy",
     "check": "node tests/client-syntax.mjs && wrangler deploy --dry-run",
     "test:browser": "node tests/browser-e2e.mjs",
+    "test:drafts": "node tests/draft-quality.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "start": "wrangler dev"
   },

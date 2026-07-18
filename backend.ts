@@ -1,7 +1,7 @@
 const CLOUDFLARE_AI_MODELS = [
-  { id: '@cf/openai/gpt-oss-20b', api: 'responses' },
   { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', api: 'chat' },
-  { id: '@cf/openai/gpt-oss-120b', api: 'responses' }
+  { id: '@cf/openai/gpt-oss-120b', api: 'responses' },
+  { id: '@cf/openai/gpt-oss-20b', api: 'responses' }
 ];
 const GROQ_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -68,10 +68,14 @@ function jsonStringField(value: string, key: string) {
 }
 
 function draftPayload(value: string) {
-  try { return JSON.parse(value); }
-  catch {
-    const draft = jsonStringField(value, 'draft');
-    if (!draft) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed === 'string') return draftPayload(parsed);
+    if (cleanText(parsed?.draft)) return parsed;
+    if (typeof parsed?.response === 'string') return draftPayload(parsed.response);
+  } catch {}
+  const draft = jsonStringField(value, 'draft');
+  if (draft) {
     return {
       draft,
       resultSummary: jsonStringField(value, 'resultSummary') || draft,
@@ -80,6 +84,9 @@ function draftPayload(value: string) {
       facts: { date: null, time: null, location: null }
     };
   }
+  const plain = cleanText(value.replace(/^draft\s*:\s*/i, ''), 1000);
+  if (!plain || /[{}]/.test(plain) || /^(?:here(?:'s| is)|sure[,!:]|certainly[,!:])/i.test(plain)) return null;
+  return { draft: plain };
 }
 
 function modelResultText(result: any) {
@@ -104,17 +111,30 @@ function modelResultText(result: any) {
   return cleanText(parts.join('\n'), 10_000);
 }
 
-function preservesExplicitIntent(raw: string, draft: string) {
+function draftViolation(raw: string, draft: string) {
   const source = raw.toLocaleLowerCase();
   const output = draft.toLocaleLowerCase();
+  const wordCount = draft.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 80) return 'The draft is longer than 80 words.';
+  if (/\[[^\]]{1,50}\]/.test(draft)) return 'The draft contains a placeholder.';
+  if (/(?:^|\s)(?::|;|=)(?:-)?(?:\)|\(|d|p)(?:\s|$)/i.test(draft)) return 'The draft contains an emoticon.';
+  if (!/^(?:hi|hello|hey)\b/i.test(raw) && /^(?:hi|hello|hey)\b/i.test(draft)) return 'The draft added a greeting.';
+  if (!/\b(thank|appreciat|grateful)\b/.test(source) && /\b(thank|appreciat|grateful)\b/.test(output)) return 'The draft added gratitude.';
+  if (!/\b(interested|happy|glad|excited)\b/.test(source) && /\b(interested|happy|glad|excited)\b/.test(output)) return 'The draft added an emotion or position.';
+  if (!/\b(definitely|guarantee|promise|certainly)\b/.test(source) && /\b(definitely|guarantee|promise|certainly)\b/.test(output)) return 'The draft strengthened certainty or added a promise.';
   const numbers = source.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
-  if (!numbers.every(number => output.includes(number))) return false;
+  if (!numbers.every(number => output.includes(number))) return 'The draft changed or omitted a number.';
   const namedDates = source.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || [];
-  if (!namedDates.every(value => new RegExp(`\\b${value}\\b`).test(output))) return false;
-  if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return false;
-  if (/(not comfortable|rather not|do not want|don't want).{0,40}(shar|disclos|tell|provide|discuss)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|do not wish|don't wish|won't|will not|cannot|can't|can’t|decline).{0,60}(shar|disclos|tell|provide|discuss|detail|information)|keep.{0,20}private/.test(output)) return false;
-  if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return false;
-  return true;
+  if (!namedDates.every(value => new RegExp(`\\b${value}\\b`).test(output))) return 'The draft changed or omitted a named date.';
+  if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return 'The draft omitted the cancellation.';
+  if (/\b(decline|reject)\b/.test(source) && !/\b(decline|reject|not accept|won't accept|will not accept|not proceed|not move forward)\b/.test(output)) return 'The draft omitted the rejection.';
+  if (/\b(cannot|can't|can’t|will not|won't|not willing|unable)\b/.test(source) && !/\b(cannot|can't|can’t|will not|won't|not willing|unable|not available)\b/.test(output)) return 'The draft weakened or omitted a firm limit.';
+  if (/(not comfortable|rather not|do not want|don't want).{0,40}(shar|disclos|tell|provide|discuss|give)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|do not wish|don't wish|won't|will not|cannot|can't|can’t|decline).{0,60}(shar|disclos|tell|provide|discuss|give|detail|information|reason)|keep.{0,20}private/.test(output)) return 'The draft omitted the privacy boundary.';
+  if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return 'The draft omitted the request for a reason.';
+  const asksOtherPerson = /\bask\b/.test(source) || /\brequest\s+(?:that|them|him|her|the other person)\b/.test(source);
+  if (asksOtherPerson && !/[?]/.test(draft) && !/\b(?:please|could you|can you|would you|let me know)\b/.test(output)) return 'The draft did not make the requested ask.';
+  if (/\b(?:convince|persuade)\b/.test(source) && !/[?]/.test(draft) && !/\b(?:please|could you|can you|would you|will you|are you willing|how about|let's|let us)\b/.test(output)) return 'The draft narrated persuasion instead of making a concrete proposal.';
+  return '';
 }
 
 function cleanName(value: unknown) {
@@ -966,40 +986,71 @@ export class RelayStore {
     const latestOtherMessage = [...recentMessages].reverse().find((item: any) => item.from !== profileId)?.text || '(none)';
     const messageKind = recentMessages.length ? 'reply' : 'opening message';
     const toneRule = TONE_GUIDANCE[tone] || TONE_GUIDANCE.professional;
-    const prompt = `Return only one JSON object in the form {"draft":"the outgoing message"}. You are Relay, a message editor writing from the User to the Other person. Your only job is to express what the User intends to communicate.
+    const prompt = `Return only one JSON object in the form {"draft":"the outgoing message"}. You are Relay, a precise message editor writing from the User to the Other person. The private text may be shorthand, context, or an instruction. Convert it into the actual message the User should send.
 
 Priority order:
 1. Correct speaker ownership.
 2. Preserve the User's intent and meaning.
-3. Preserve every fact, amount, date, condition, question, rejection, and boundary.
+3. Preserve every fact, amount, date, condition, question, rejection, certainty level, and boundary.
 4. Apply the selected tone.
 5. Keep the message concise and natural.
 
-The private instruction is authoritative. Conversation history is context only. Never copy the Other person's first-person claims into the User's voice. Never answer on behalf of the Other person. Never invent reasons, facts, promises, commitments, consent, agreement, or enthusiasm. Do not expose or mention the private instruction. Do not add advice, analysis, labels, or negotiation strategy.
+Write the speech act itself. If the User wants to ask, ask. If they answer, answer. If they set a boundary, state it at the same strength. If they reject or close, do that clearly. Do not narrate the intention with phrases such as "I want to ask" or "I would like to discuss" unless those words are themselves the intended message.
+
+If the private text says "convince" or "persuade," turn the underlying idea into a concrete, low-pressure request or proposal. Give the Other person a clear choice; do not say that the User wants to convince them and do not assume they agree.
+
+Default to 1-2 short sentences and one clear result. Use at most 3 sentences and 80 words. Start with the substance. Do not add a greeting, recipient-name placeholder, sign-off, gratitude, apology, backstory, emotion, enthusiasm, emoji, or generic social filler unless the private text asks for it. Do not make the message more certain, more agreeable, more urgent, more personal, or more confrontational than the User intended.
+
+The private instruction is authoritative. Conversation history is context only. Never copy the Other person's first-person claims into the User's voice. Never answer on behalf of the Other person. Never invent reasons, facts, promises, commitments, consent, agreement, interest, or enthusiasm. Do not expose or mention the private instruction. Do not add advice, analysis, labels, or negotiation strategy.
 
 For a short reply fragment, use the latest message to resolve references. Example: Other person says "I'm in a tight spot and need 500 units ASAP" and the User says "reason why?" The draft should ask why the Other person needs 500 units urgently; it must not say the User is in a tight spot.
 
 For a multi-part instruction, include every independent intent. Example: if the User says "I'm not comfortable sharing that. Cancel my request," the draft must communicate both the refusal to share and the cancellation.
 
+Examples of the desired transformation:
+- Private: "ask my friend to lend me 14k and i can repay Friday" Draft: "Could you lend me 14k? I can repay you by Friday."
+- Private: "tell manager cannot work Saturday, don't want to give a reason" Draft: "I am not available to work Saturday, and I prefer to keep the reason private."
+- Private: "decline offer but thank them" Draft: "Thank you for the offer, but I have decided to decline."
+- Private: "yes 8pm but not at my house" Draft: "8 pm works for me, but I am not willing to meet at my house. Can we choose another location?"
+- Private: "convince colleague to test the product for a week" Draft: "Would you be willing to test the product for one week before deciding?"
+
 Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
     const previous = cleanText(previousDraft);
     const modelCount = this.rewriteModelCount();
-    for (let attempt = 0; attempt < modelCount * 2; attempt += 1) {
+    const modelPlan = [0, 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1), 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1)];
+    let lastViolation = '';
+    let styleFallback = '';
+    for (let attempt = 0; attempt < modelPlan.length; attempt += 1) {
+      if (attempt === 2 && styleFallback) break;
       try {
-        const retryRule = attempt ? previous ? '\nThe prior draft did not visibly change. Return JSON only and restyle it with clearly different wording while preserving the exact same message.' : '\nThe previous response was invalid. Return only {"draft":"..."}.' : '';
+        const retryRule = attempt
+          ? `\nA prior candidate was rejected${lastViolation ? ` because: ${lastViolation}` : ''}. Correct that problem. ${previous ? 'Use clearly different wording from the previous approved-card draft. ' : ''}Return JSON only.`
+          : '';
         const messages = [
           { role: 'system', content: prompt },
           { role: 'user', content: `Message type: ${messageKind}\nRecipient: ${peerId || 'not joined'}\nOther person's latest message:\n${latestOtherMessage}\n\nConversation context (reference only):\n${history}\n\nUser's private intent for this outgoing message:\n${raw}${previous ? `\n\nPrevious draft to restyle:\n${previous}` : ''}${retryRule}` }
         ];
-        let response = cleanText(await this.runRewriteModel(messages, attempt % modelCount), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let response = cleanText(await this.runRewriteModel(messages, modelPlan[attempt]), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         const start = response.indexOf('{');
         const end = response.lastIndexOf('}');
         if (start >= 0 && end > start) response = response.slice(start, end + 1);
         const parsed = draftPayload(response);
         if (!parsed) throw new Error('The AI response did not contain a usable outgoing draft.');
         const draft = cleanText(parsed.draft);
-        if (!draft || (previous && draft.toLocaleLowerCase() === previous.toLocaleLowerCase())) continue;
-        if (!preservesExplicitIntent(raw, draft)) continue;
+        if (!draft) {
+          lastViolation = 'The candidate was empty.';
+          continue;
+        }
+        if (previous && draft.toLocaleLowerCase() === previous.toLocaleLowerCase()) {
+          lastViolation = 'The wording did not change for the selected tone.';
+          continue;
+        }
+        lastViolation = draftViolation(raw, draft);
+        if (lastViolation) {
+          if (/longer than 80 words|contains an emoticon|added a greeting|added gratitude/.test(lastViolation) && !styleFallback) styleFallback = draft;
+          console.warn('Relay AI draft rejected:', lastViolation);
+          continue;
+        }
         return {
           draft,
           resultSummary: cleanText(draft, 500),
@@ -1008,8 +1059,20 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
           facts: { date: null, time: null, location: null }
         };
       } catch (error: any) {
-        console.warn('Relay AI rewrite attempt failed:', cleanText(error?.message, 300) || 'Unknown AI response error.');
+        lastViolation = cleanText(error?.message, 300) || 'The model response was unusable.';
+        console.warn('Relay AI rewrite attempt failed:', lastViolation);
+        const retryAfterMs = Number(error?.retryAfterMs || 0);
+        if (retryAfterMs > 0 && retryAfterMs <= 10_000) await new Promise(resolve => setTimeout(resolve, retryAfterMs));
       }
+    }
+    if (styleFallback) {
+      return {
+        draft: styleFallback,
+        resultSummary: cleanText(styleFallback, 500),
+        resultType: 'progress',
+        requiresConfirmation: false,
+        facts: { date: null, time: null, location: null }
+      };
     }
     throw new Error('Relay could not rewrite this message. Your private message was not sent. Please try again.');
   }
@@ -1032,13 +1095,23 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
           model,
           messages,
           temperature: 0.2,
-          max_completion_tokens: 450,
+          max_completion_tokens: 240,
           reasoning_effort: 'low',
           response_format: { type: 'json_object' }
         })
       });
       const data: any = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(`${model}: ${cleanText(data?.error?.message, 240) || `Groq returned HTTP ${response.status}.`}`);
+      if (!response.ok) {
+        const detail = cleanText(data?.error?.message, 600) || `Groq returned HTTP ${response.status}.`;
+        const retryMatch = /try again in\s+([\d.]+)\s*(ms|s)/i.exec(detail);
+        const headerSeconds = Number(response.headers.get('retry-after') || 0);
+        const retryAfterMs = retryMatch
+          ? Number(retryMatch[1]) * (retryMatch[2].toLowerCase() === 'ms' ? 1 : 1000)
+          : headerSeconds * 1000;
+        const error: any = new Error(`${model}: ${cleanText(detail, 240)}`);
+        if (response.status === 429 && retryAfterMs > 0) error.retryAfterMs = Math.ceil(retryAfterMs + 150);
+        throw error;
+      }
       const content = cleanText(data?.choices?.[0]?.message?.content, 10_000);
       if (!content) throw new Error(`${model}: Groq returned an empty response.`);
       return content;
