@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 const base = process.argv[2] || 'http://127.0.0.1:8791';
 const wsBase = base.replace(/^http/, 'ws');
 
+function shortInviteFrom(url) {
+  const parsed = new URL(url);
+  const match = /^\/i\/([A-Za-z0-9_-]{22})$/.exec(parsed.pathname);
+  assert.ok(match, 'new invites should use the short /i/<token> path');
+  assert.equal(parsed.search, '');
+  return match[1];
+}
+
 async function request(path, options = {}) {
   const response = await fetch(base + path, options);
   const body = await response.json().catch(() => ({}));
@@ -92,7 +100,13 @@ try {
   const created = await owner.wait(message => message.type === 'goal-created');
   const goalId = created.goal.id;
   assert.match(goalId, /^G[0-9a-f]{32}$/);
-  assert.ok(created.shareUrl.includes('?invite='));
+  const originalInvite = shortInviteFrom(created.shareUrl);
+  assert.equal(originalInvite.length, 22);
+  assert.equal(created.shareUrl.includes(goalId), false, 'the share URL must not expose the conversation ID');
+  const invitePage = await fetch(base + new URL(created.shareUrl).pathname);
+  assert.equal(invitePage.status, 200, `the short invite route should serve Relay: ${created.shareUrl}`);
+  assert.match(await invitePage.text(), /<title>Relay<\/title>/);
+  assert.equal((await fetch(base + '/i/too-short')).status, 404, 'malformed invite routes should not serve the app');
   assert.equal(created.goal.privateNotes[0].text, 'Meet Friday at 3pm in the main office.');
 
   const assertMeaningPreserved = draft => {
@@ -136,8 +150,13 @@ try {
   assert.equal(ownerApproved.goal.thread[0].from, profiles[0].profile.id);
   assert.equal(ownerApproved.goal.thread[0].privateOriginal, 'Meet Friday at 3pm in the main office.');
 
-  const invite = new URL(created.shareUrl).searchParams.get('invite');
-  participant.send({ type: 'claim-invite', invite });
+  owner.send({ type: 'rotate-invite', goalId });
+  const rotated = await owner.wait(message => message.type === 'invite-rotated' && message.goalId === goalId);
+  const invite = shortInviteFrom(rotated.shareUrl);
+  outsider.send({ type: 'claim-invite', invite: originalInvite });
+  const expiredInvite = await outsider.wait(message => message.type === 'error' && message.action === 'claim-invite');
+  assert.equal(expiredInvite.message, 'Invite unavailable.', 'rotating an invite should invalidate its old token');
+  participant.send({ type: 'claim-invite', invite: `${goalId}.${invite}` });
   const joined = await participant.wait(message => message.type === 'invite-claimed' && message.goal.id === goalId);
   assert.equal(joined.goal.participants.length, 2);
   assert.equal(joined.goal.privateNotes.length, 0, 'private owner text must not cross profiles');
@@ -254,7 +273,7 @@ try {
 
   owner.send({ type: 'create-goal', message: 'Concurrency check.', tone: 'direct' });
   const raceCreated = await owner.wait(message => message.type === 'goal-created' && message.goal.id !== goalId);
-  const raceInvite = new URL(raceCreated.shareUrl).searchParams.get('invite');
+  const raceInvite = shortInviteFrom(raceCreated.shareUrl);
   const participantRace = participant.wait(message => message.type === 'invite-claimed' || (message.type === 'error' && message.action === 'claim-invite'));
   const outsiderRace = outsider.wait(message => message.type === 'invite-claimed' || (message.type === 'error' && message.action === 'claim-invite'));
   participant.send({ type: 'claim-invite', invite: raceInvite });
@@ -265,7 +284,7 @@ try {
   owner.send({ type: 'delete-conversation-everyone', goalId: raceCreated.goal.id });
   await owner.wait(message => message.type === 'conversation-deleted' && message.goalId === raceCreated.goal.id);
 
-  await new Promise(resolve => process.stdout.write('E2E passed: recovery, four tones, speaker attribution, privacy, invite lock, persistent contacts, blocking, deletion, results, Representative modes, and conversation removal.\n', resolve));
+  await new Promise(resolve => process.stdout.write('E2E passed: recovery, four tones, speaker attribution, privacy, short and legacy invite locks, rotation, persistent contacts, blocking, deletion, results, Representative modes, and conversation removal.\n', resolve));
 } finally {
   owner.close();
   participant.close();

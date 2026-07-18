@@ -149,6 +149,14 @@ function validGoalId(value: unknown) {
   return typeof value === 'string' && /^G[0-9a-f]{6,64}$/i.test(value);
 }
 
+function validShortInvite(value: unknown) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{22}$/.test(value);
+}
+
+function shortInviteUrl(origin: string, token: string) {
+  return `${origin}/i/${token}`;
+}
+
 function parseRecovery(value: unknown) {
   if (typeof value !== 'string') return null;
   const parts = value.trim().split('.');
@@ -352,11 +360,12 @@ export class RelayStore {
     for (const socket of this.sockets.get(profileId) || []) this.send(socket, message);
   }
 
-  enqueueSocketMessage(socket: any, raw: unknown) {
+  async enqueueSocketMessage(socket: any, raw: unknown) {
     let parsed: any = {};
     try { parsed = JSON.parse(String(raw)); } catch {}
     const session = this.sessions.get(socket);
-    const inviteGoal = parsed.type === 'claim-invite' && typeof parsed.invite === 'string' ? parsed.invite.split('.')[0] : '';
+    const invite = parsed.type === 'claim-invite' && session?.profileId ? await this.resolveInvite(parsed.invite) : null;
+    const inviteGoal = invite?.goalId || '';
     const queueKey = validGoalId(parsed.goalId) ? `goal:${parsed.goalId}` : validGoalId(inviteGoal) ? `goal:${inviteGoal}` : `profile:${session?.profileId || randomHex(6)}`;
     const previous = this.queues.get(queueKey) || Promise.resolve();
     const next = previous.catch(() => {}).then(() => this.handleSocketMessage(socket, raw));
@@ -461,13 +470,14 @@ export class RelayStore {
     const drafted = await this.makeDraft(profileId, targetId, raw, tone, null);
     const now = Date.now();
     const goalId = `G${randomHex(16)}`;
-    const inviteSecret = targetId ? null : randomSecret();
+    const inviteSecret = targetId ? null : randomSecret(16);
+    const inviteHash = inviteSecret ? await sha256(inviteSecret) : null;
     const goal: any = {
       schema: 2,
       id: goalId,
       creatorId: profileId,
       participants: targetId ? [profileId, targetId] : [profileId],
-      inviteHash: inviteSecret ? await sha256(inviteSecret) : null,
+      inviteHash,
       inviteClaimedAt: targetId ? now : null,
       status: 'draft',
       title: '',
@@ -482,24 +492,39 @@ export class RelayStore {
       updatedAt: now
     };
     goal.pendingDraft.noteId = goal.privateNotes[0].id;
-    await this.write(`goal:${goalId}`, goal);
+    await this.storage.transaction(async (tx: any) => {
+      await tx.put(`goal:${goalId}`, goal);
+      if (inviteHash) await tx.put(`invite:${inviteHash}`, { goalId, createdAt: now });
+    });
     for (const id of goal.participants) await this.addThread(id, goalId);
     if (targetId) await this.ensureContacts(profileId, targetId);
     await this.broadcastGoal(goal);
-    const shareUrl = inviteSecret ? `${origin}/?invite=${encodeURIComponent(`${goalId}.${inviteSecret}`)}` : null;
+    const shareUrl = inviteSecret ? shortInviteUrl(origin, inviteSecret) : null;
     this.sendTo(profileId, { type: 'goal-created', goal: await this.viewGoal(goal, profileId), shareUrl });
   }
 
-  async claimInvite(profileId: string, token: unknown, origin: string, socket: any) {
+  async resolveInvite(token: unknown) {
     const value = cleanText(token, 300);
+    if (validShortInvite(value)) {
+      const hash = await sha256(value);
+      const mapping: any = await this.read(`invite:${hash}`);
+      const goalId = typeof mapping === 'string' ? mapping : mapping?.goalId;
+      return validGoalId(goalId) ? { goalId: String(goalId), secret: value, hash } : null;
+    }
     const dot = value.indexOf('.');
     const goalId = dot > 0 ? value.slice(0, dot) : '';
     const secret = dot > 0 ? value.slice(dot + 1) : '';
-    if (!validGoalId(goalId) || !/^[A-Za-z0-9_-]{24,128}$/.test(secret)) throw new Error('Invite unavailable.');
-    const goal = await this.getGoal(goalId);
+    if (!validGoalId(goalId) || !/^[A-Za-z0-9_-]{22,128}$/.test(secret)) return null;
+    return { goalId, secret, hash: await sha256(secret) };
+  }
+
+  async claimInvite(profileId: string, token: unknown, origin: string, socket: any) {
+    const invite = await this.resolveInvite(token);
+    if (!invite) throw new Error('Invite unavailable.');
+    const goal = await this.getGoal(invite.goalId);
     if (!goal || goal.deletedAt) throw new Error('Invite unavailable.');
     if (goal.participants.includes(profileId)) return this.send(socket, { type: 'goal-loaded', goal: await this.viewGoal(goal, profileId) });
-    if (goal.participants.length !== 1 || !goal.inviteHash || await sha256(secret) !== goal.inviteHash) throw new Error('Invite unavailable.');
+    if (goal.participants.length !== 1 || !goal.inviteHash || invite.hash !== goal.inviteHash) throw new Error('Invite unavailable.');
     if (await this.isBlockedEitherWay(goal.creatorId, profileId)) throw new Error('Invite unavailable.');
 
     goal.participants.push(profileId);
@@ -509,7 +534,10 @@ export class RelayStore {
     goal.inviteClaimedAt = Date.now();
     if (goal.status === 'waiting') goal.status = goal.result?.status === 'confirming' ? 'confirming' : 'active';
     goal.updatedAt = Date.now();
-    await this.write(`goal:${goal.id}`, goal);
+    await this.storage.transaction(async (tx: any) => {
+      await tx.put(`goal:${goal.id}`, goal);
+      await tx.put(`invite:${invite.hash}`, DELETED_VALUE);
+    });
     await this.addThread(profileId, goal.id);
     await this.ensureContacts(goal.creatorId, profileId);
     await this.broadcastGoal(goal);
@@ -650,8 +678,12 @@ export class RelayStore {
     const goal = await this.authorizedGoal(profileId, goalId);
     if (goal.creatorId !== profileId) throw new Error('Only the conversation creator can delete it for everyone.');
     goal.deletedAt = Date.now();
+    const inviteHash = goal.inviteHash;
     goal.inviteHash = null;
-    await this.write(`goal:${goal.id}`, goal);
+    await this.storage.transaction(async (tx: any) => {
+      await tx.put(`goal:${goal.id}`, goal);
+      if (inviteHash) await tx.put(`invite:${inviteHash}`, DELETED_VALUE);
+    });
     for (const id of goal.participants) {
       await this.removeThread(id, goal.id);
       this.sendTo(id, { type: 'conversation-deleted', goalId: goal.id });
@@ -676,11 +708,17 @@ export class RelayStore {
   async rotateInvite(profileId: string, goalId: unknown, origin: string, socket: any) {
     const goal = await this.authorizedGoal(profileId, goalId);
     if (goal.creatorId !== profileId || goal.participants.length !== 1) throw new Error('This conversation cannot accept another participant.');
-    const secret = randomSecret();
-    goal.inviteHash = await sha256(secret);
+    const oldInviteHash = goal.inviteHash;
+    const secret = randomSecret(16);
+    const inviteHash = await sha256(secret);
+    goal.inviteHash = inviteHash;
     goal.updatedAt = Date.now();
-    await this.write(`goal:${goal.id}`, goal);
-    this.send(socket, { type: 'invite-rotated', goalId: goal.id, shareUrl: `${origin}/?invite=${encodeURIComponent(`${goal.id}.${secret}`)}` });
+    await this.storage.transaction(async (tx: any) => {
+      await tx.put(`goal:${goal.id}`, goal);
+      if (oldInviteHash) await tx.put(`invite:${oldInviteHash}`, DELETED_VALUE);
+      await tx.put(`invite:${inviteHash}`, { goalId: goal.id, createdAt: goal.updatedAt });
+    });
+    this.send(socket, { type: 'invite-rotated', goalId: goal.id, shareUrl: shortInviteUrl(origin, secret) });
   }
 
   async confirmResult(profileId: string, goalId: unknown, version: unknown) {

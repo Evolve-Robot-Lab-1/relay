@@ -104,8 +104,8 @@ try {
   await cdp.send('Runtime.enable', {}, sessionId);
   await cdp.send('Page.enable', {}, sessionId);
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-  const unavailableInvite = 'G00000000000000000000000000000000.00000000000000000000000000000000';
-  await cdp.send('Page.navigate', { url: base + '/?invite=' + unavailableInvite }, sessionId);
+  const unavailableInvite = 'AAAAAAAAAAAAAAAAAAAAAA';
+  await cdp.send('Page.navigate', { url: base + '/i/' + unavailableInvite }, sessionId);
 
   async function evaluate(expression) {
     const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
@@ -128,7 +128,7 @@ try {
   assert.equal(await evaluate(`document.querySelector('#name-banner-title').textContent`), 'Choose a name to join');
   await delay(500);
   assert.equal((await evaluate(`document.querySelector('#toast').textContent`)).includes('Invite unavailable'), false, 'An unnamed profile must not claim the invite.');
-  assert.ok((await evaluate(`location.search`)).includes('invite='), 'The pending invite should remain until a name is saved.');
+  assert.equal(await evaluate(`location.pathname`), '/i/' + unavailableInvite, 'The pending invite path should remain until a name is saved.');
   const onboardingScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-onboarding.png', Buffer.from(onboardingScreenshot.data, 'base64'));
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
@@ -137,7 +137,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
   await evaluate(`document.querySelector('#onboarding-name').value = 'Browser Test'; document.querySelector('#save-onboarding-name').click()`);
   await waitFor(`document.querySelector('#name-banner').classList.contains('hidden')`, 'Display name did not save or the banner did not close.');
-  await waitFor(`location.search === ''`, 'The invite was not attempted after the name was saved.');
+  await waitFor(`location.pathname === '/' && location.search === ''`, 'The invite was not attempted after the name was saved.');
   console.log('Browser: display name saved');
   assert.equal(await evaluate(`document.querySelector('.brand')?.textContent`), 'RELAY');
   assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'say it better.');

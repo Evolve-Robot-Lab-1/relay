@@ -233,7 +233,8 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), inviteClaiming: false, homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
+    const pathInvite = /^\\/i\\/([A-Za-z0-9_-]{22})\\/?$/.exec(location.pathname)?.[1] || null;
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: pathInvite || new URLSearchParams(location.search).get('invite'), inviteClaiming: false, homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const labelFor = profile => profile ? profile.name || 'Other person' : 'Waiting for participant';
@@ -388,7 +389,7 @@ export const HTML = `<!doctype html>
         if (message.type === 'invite-claimed') {
           state.invite = null;
           state.inviteClaiming = false;
-          history.replaceState(null, '', location.pathname);
+          history.replaceState(null, '', '/');
           toast('Conversation joined.');
         }
         showConversation();
@@ -407,7 +408,7 @@ export const HTML = `<!doctype html>
         }
         return;
       }
-      if (message.type === 'invite-rotated') return copyText(message.shareUrl, 'Invite link copied.');
+      if (message.type === 'invite-rotated') return shareInvite(message.shareUrl);
       if (message.type === 'reply-sent' && state.goal?.id === message.goalId) {
         state.replySending = false;
         byId('reply-input').value = '';
@@ -425,7 +426,7 @@ export const HTML = `<!doctype html>
         if (message.action === 'claim-invite') {
           state.invite = null;
           state.inviteClaiming = false;
-          history.replaceState(null, '', location.pathname);
+          history.replaceState(null, '', '/');
         }
         if (message.action === 'draft-reply') state.replySending = false;
         if (state.goal) renderConversation();
@@ -637,6 +638,18 @@ export const HTML = `<!doctype html>
     async function copyText(value, success) {
       try { await navigator.clipboard.writeText(value); toast(success); }
       catch { window.prompt('Copy this value:', value); }
+    }
+
+    async function shareInvite(value) {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title:'Relay conversation', text:'Join me on Relay', url:value });
+          return;
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+        }
+      }
+      return copyText(value, 'Invite link copied.');
     }
 
     function openCreate(contactId = '') {
