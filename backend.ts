@@ -1,4 +1,8 @@
-const CLOUDFLARE_AI_MODELS = ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b'];
+const CLOUDFLARE_AI_MODELS = [
+  { id: '@cf/openai/gpt-oss-20b', api: 'responses' },
+  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', api: 'chat' },
+  { id: '@cf/openai/gpt-oss-120b', api: 'responses' }
+];
 const GROQ_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DELETED_VALUE = '__relay_deleted_v1__';
@@ -72,7 +76,8 @@ function draftPayload(value: string) {
 }
 
 function modelResultText(result: any) {
-  const direct = cleanText(result, 10_000) || cleanText(result?.response, 10_000) || cleanText(result?.output_text, 10_000);
+  const structuredResponse = result?.response && typeof result.response === 'object' ? JSON.stringify(result.response) : '';
+  const direct = cleanText(result, 10_000) || cleanText(result?.response, 10_000) || cleanText(structuredResponse, 10_000) || cleanText(result?.output_text, 10_000);
   if (direct) return direct;
   if (!Array.isArray(result?.output)) return '';
   const parts: string[] = [];
@@ -97,6 +102,8 @@ function preservesExplicitIntent(raw: string, draft: string) {
   const output = draft.toLocaleLowerCase();
   const numbers = source.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
   if (!numbers.every(number => output.includes(number))) return false;
+  const namedDates = source.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || [];
+  if (!namedDates.every(value => new RegExp(`\\b${value}\\b`).test(output))) return false;
   if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return false;
   if (/(not comfortable|rather not|do not want|don't want).{0,30}(share|disclos|tell)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|won't|will not|cannot|can't|can’t).{0,50}(share|disclos|tell|provide)|keep.{0,20}private/.test(output)) return false;
   if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return false;
@@ -1000,16 +1007,27 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
     const cloudflareIndex = modelIndex - groqCount;
     const model = CLOUDFLARE_AI_MODELS[cloudflareIndex];
     if (!this.env.AI || !model) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    if (model.api === 'chat') {
+      const result = await this.env.AI.run(model.id, {
+        messages,
+        temperature: 0.2,
+        max_tokens: 450,
+        response_format: { type: 'json_object' }
+      });
+      const content = modelResultText(result);
+      if (!content) throw new Error(`${model.id}: The model returned an empty response.`);
+      return content;
+    }
     const instructions = cleanText(messages.find(message => message.role === 'system')?.content, 10_000);
     const input = cleanText(messages.find(message => message.role === 'user')?.content, 10_000);
-    const result = await this.env.AI.run(model, {
+    const result = await this.env.AI.run(model.id, {
       instructions,
       input,
       reasoning: { effort: 'low' },
       max_output_tokens: 1800
     });
     const content = modelResultText(result);
-    if (!content) throw new Error(`${model}: The model returned an empty response.`);
+    if (!content) throw new Error(`${model.id}: The model returned an empty response.`);
     return content;
   }
 }
