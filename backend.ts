@@ -400,7 +400,7 @@ export class RelayStore {
         case 'claim-invite': return await this.claimInvite(profileId, message.invite, session.origin, socket);
         case 'open-goal': return await this.openGoal(profileId, message.goalId, socket);
         case 'draft-reply': return await this.draftReply(profileId, message);
-        case 'approve-outbound': return await this.approveDraft(profileId, message.goalId);
+        case 'approve-outbound': return await this.approveDraft(profileId, message.goalId, session.origin, socket);
         case 'reject-outbound': return await this.rejectDraft(profileId, message.goalId);
         case 'redraft': return await this.redraft(profileId, message);
         case 'toggle-representative': return await this.toggleRepresentative(profileId, message.goalId);
@@ -470,14 +470,12 @@ export class RelayStore {
     const drafted = await this.makeDraft(profileId, targetId, raw, tone, null);
     const now = Date.now();
     const goalId = `G${randomHex(16)}`;
-    const inviteSecret = targetId ? null : randomSecret(16);
-    const inviteHash = inviteSecret ? await sha256(inviteSecret) : null;
     const goal: any = {
       schema: 2,
       id: goalId,
       creatorId: profileId,
       participants: targetId ? [profileId, targetId] : [profileId],
-      inviteHash,
+      inviteHash: null,
       inviteClaimedAt: targetId ? now : null,
       status: 'draft',
       title: '',
@@ -492,15 +490,11 @@ export class RelayStore {
       updatedAt: now
     };
     goal.pendingDraft.noteId = goal.privateNotes[0].id;
-    await this.storage.transaction(async (tx: any) => {
-      await tx.put(`goal:${goalId}`, goal);
-      if (inviteHash) await tx.put(`invite:${inviteHash}`, { goalId, createdAt: now });
-    });
-    for (const id of goal.participants) await this.addThread(id, goalId);
+    await this.write(`goal:${goalId}`, goal);
+    await this.addThread(profileId, goalId);
     if (targetId) await this.ensureContacts(profileId, targetId);
-    await this.broadcastGoal(goal);
-    const shareUrl = inviteSecret ? shortInviteUrl(origin, inviteSecret) : null;
-    this.sendTo(profileId, { type: 'goal-created', goal: await this.viewGoal(goal, profileId), shareUrl });
+    this.sendTo(profileId, { type: 'goal-created', goal: await this.viewGoal(goal, profileId), shareUrl: null });
+    await this.pushBootstrap(profileId);
   }
 
   async resolveInvite(token: unknown) {
@@ -524,6 +518,7 @@ export class RelayStore {
     const goal = await this.getGoal(invite.goalId);
     if (!goal || goal.deletedAt) throw new Error('Invite unavailable.');
     if (goal.participants.includes(profileId)) return this.send(socket, { type: 'goal-loaded', goal: await this.viewGoal(goal, profileId) });
+    if (goal.pendingDraft || !goal.thread.some((item: any) => !item.deletedAt)) throw new Error('Invite unavailable.');
     if (goal.participants.length !== 1 || !goal.inviteHash || invite.hash !== goal.inviteHash) throw new Error('Invite unavailable.');
     if (await this.isBlockedEitherWay(goal.creatorId, profileId)) throw new Error('Invite unavailable.');
 
@@ -578,7 +573,7 @@ export class RelayStore {
     this.sendTo(profileId, { type: 'reply-sent', goalId: goal.id });
   }
 
-  async approveDraft(profileId: string, goalId: unknown) {
+  async approveDraft(profileId: string, goalId: unknown, origin: string, socket: any) {
     const goal = await this.authorizedGoal(profileId, goalId);
     const pending = goal.pendingDraft;
     if (!pending || pending.ownerId !== profileId) throw new Error('No draft is waiting for your approval.');
@@ -590,14 +585,24 @@ export class RelayStore {
     goal.status = goal.participants.length === 1 ? 'waiting' : goal.result.status === 'confirming' ? 'confirming' : 'active';
     goal.updatedAt = Date.now();
     goal.removedBy = [];
-    await this.write(`goal:${goal.id}`, goal);
+    const oldInviteHash = goal.inviteHash;
+    const inviteSecret = goal.creatorId === profileId && goal.participants.length === 1 ? randomSecret(16) : null;
+    const inviteHash = inviteSecret ? await sha256(inviteSecret) : null;
+    if (inviteHash) goal.inviteHash = inviteHash;
+    await this.storage.transaction(async (tx: any) => {
+      await tx.put(`goal:${goal.id}`, goal);
+      if (oldInviteHash) await tx.put(`invite:${oldInviteHash}`, DELETED_VALUE);
+      if (inviteHash) await tx.put(`invite:${inviteHash}`, { goalId: goal.id, createdAt: goal.updatedAt });
+    });
     for (const id of goal.participants) await this.addThread(id, goal.id);
     await this.broadcastGoal(goal);
+    if (inviteSecret) this.send(socket, { type: 'invite-ready', goalId: goal.id, shareUrl: shortInviteUrl(origin, inviteSecret) });
   }
 
   async rejectDraft(profileId: string, goalId: unknown) {
     const goal = await this.authorizedGoal(profileId, goalId);
     if (!goal.pendingDraft || goal.pendingDraft.ownerId !== profileId) throw new Error('No draft is waiting for your review.');
+    if (!goal.thread.length && goal.creatorId === profileId) return this.deleteConversationEveryone(profileId, goal.id);
     goal.pendingDraft = null;
     goal.status = goal.thread.length ? (goal.participants.length === 2 ? 'active' : 'waiting') : 'draft';
     goal.updatedAt = Date.now();
@@ -708,6 +713,7 @@ export class RelayStore {
   async rotateInvite(profileId: string, goalId: unknown, origin: string, socket: any) {
     const goal = await this.authorizedGoal(profileId, goalId);
     if (goal.creatorId !== profileId || goal.participants.length !== 1) throw new Error('This conversation cannot accept another participant.');
+    if (goal.pendingDraft || !goal.thread.some((item: any) => !item.deletedAt)) throw new Error('Approve the first message before sharing.');
     const oldInviteHash = goal.inviteHash;
     const secret = randomSecret(16);
     const inviteHash = await sha256(secret);
@@ -1003,7 +1009,7 @@ export class RelayStore {
       pendingDraft: goal.pendingDraft?.ownerId === profileId ? { draft: goal.pendingDraft.draft, original: pendingNote?.text || '', noteId: goal.pendingDraft.noteId, facts: goal.pendingDraft.facts, tone: goal.pendingDraft.tone } : null,
       result: goal.result,
       canDeleteEveryone: goal.creatorId === profileId,
-      canInvite: goal.creatorId === profileId && goal.participants.length === 1,
+      canInvite: goal.creatorId === profileId && goal.participants.length === 1 && !goal.pendingDraft && visibleThread.length > 0,
       createdAt: goal.createdAt,
       updatedAt: goal.updatedAt
     };

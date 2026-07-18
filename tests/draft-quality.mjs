@@ -231,9 +231,10 @@ try {
   console.log('\n\nCONTEXTUAL REPLIES');
   const seed = await createDraft(owner, 'I need 500 units as soon as possible.');
   if (!seed) throw new Error('Cannot evaluate contextual replies without the opening draft.');
+  const inviteReady = owner.wait(message => message.type === 'invite-ready' && message.goalId === seed.goal.id);
   owner.send({ type: 'approve-outbound', goalId: seed.goal.id });
   await owner.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length === 1);
-  const inviteUrl = new URL(seed.shareUrl);
+  const inviteUrl = new URL((await inviteReady).shareUrl);
   const invite = /^\/i\/([A-Za-z0-9_-]{22})$/.exec(inviteUrl.pathname)?.[1] || inviteUrl.searchParams.get('invite');
   peer.send({ type: 'claim-invite', invite });
   await peer.wait(message => message.type === 'invite-claimed' && message.goal.id === seed.goal.id);

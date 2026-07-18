@@ -190,13 +190,13 @@ export const HTML = `<!doctype html>
       <button class="back" type="button" data-action="go-home"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>Back</button>
       <div class="convo-head">
         <div><h1 id="conversation-title">Conversation</h1><div class="convo-meta"><span id="conversation-status" class="badge">Draft</span><span id="conversation-peer"></span></div></div>
-        <div class="convo-actions"><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
+        <div id="conversation-actions" class="convo-actions"><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
       </div>
       <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Private</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"></path></svg>Shared</button></div>
       <section id="draft-card" class="draft-card hidden">
         <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-original" class="draft-original"></div><div id="draft-facts" class="facts"></div>
         <div id="tone-options" class="tone-options"><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="professional">Professional</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="friendly">Friendly</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="direct">Direct</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="casual">Casual</button></div>
-        <div id="draft-status" class="draft-status"></div><div class="draft-actions"><button class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button></div>
+        <div id="draft-status" class="draft-status"></div><div class="draft-actions"><button id="approve-draft-button" class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button></div>
       </section>
       <section id="result-panel" class="result-panel">
         <div class="result-head"><h2>Conversation result</h2><span id="result-state" class="badge">Open</span></div>
@@ -425,6 +425,7 @@ export const HTML = `<!doctype html>
         }
         return;
       }
+      if (message.type === 'invite-ready') return shareInvite(message.shareUrl);
       if (message.type === 'invite-rotated') return shareInvite(message.shareUrl);
       if (message.type === 'reply-sent' && state.goal?.id === message.goalId) {
         state.replySending = false;
@@ -610,6 +611,7 @@ export const HTML = `<!doctype html>
       byId('conversation-title').textContent = goal.title || labelFor(peer);
       byId('conversation-peer').textContent = peer ? labelFor(peer) : 'Invite not claimed';
       const status = byId('conversation-status'); status.textContent = statusLabels[goal.status] || goal.status; status.className = 'badge ' + goal.status;
+      byId('conversation-actions').classList.toggle('hidden', Boolean(goal.pendingDraft && goal.thread.length === 0));
       byId('share-button').classList.toggle('hidden', !goal.canInvite);
       byId('delete-everyone-button').classList.toggle('hidden', !goal.canDeleteEveryone);
       byId('private-tab').classList.toggle('active', state.tab === 'private');
@@ -677,6 +679,7 @@ export const HTML = `<!doctype html>
       byId('draft-text').textContent = goal.pendingDraft.draft;
       byId('draft-original').textContent = goal.pendingDraft.original ? 'You said: "' + goal.pendingDraft.original + '"' : '';
       const selectedTone = goal.pendingDraft.tone || goal.tone || 'professional';
+      byId('approve-draft-button').textContent = goal.creatorId === state.profile.id && goal.participants.length === 1 ? 'Approve and share' : 'Approve and send';
       byId('tone-options').querySelectorAll('[data-tone]').forEach(button => {
         button.classList.toggle('active', button.dataset.tone === selectedTone);
         button.disabled = state.toneUpdating;

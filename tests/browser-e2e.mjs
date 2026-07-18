@@ -95,10 +95,12 @@ async function createInviteOwner() {
   const creating = client.wait(message => message.type === 'goal-created');
   client.send({ type: 'create-goal', message: 'Can we discuss the project timeline?', tone: 'professional' });
   const created = await creating;
+  assert.equal(created.shareUrl, null);
   const approved = client.wait(message => message.type === 'goal-updated' && message.goal.id === created.goal.id && message.goal.thread.length === 1);
+  const inviteReady = client.wait(message => message.type === 'invite-ready' && message.goalId === created.goal.id);
   client.send({ type: 'approve-outbound', goalId: created.goal.id });
   await approved;
-  return { client, goalId: created.goal.id, shareUrl: created.shareUrl };
+  return { client, goalId: created.goal.id, shareUrl: (await inviteReady).shareUrl };
 }
 
 async function devtoolsAddress() {
@@ -231,7 +233,7 @@ try {
   assert.ok(await evaluate(`document.querySelector('#profile-button svg.icon') !== null`), 'Profile should use an outline icon.');
   assert.equal(await evaluate(`document.querySelector('#manage-conversations-button').classList.contains('hidden')`), true, 'Manage must be hidden for an empty list.');
   assert.ok((await evaluate(`document.querySelector('#thread-list').textContent`)).includes('Start one when there is something you would rather not say alone.'));
-  await evaluate(`window.__copied = ''; Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async value => { window.__copied = value; } } })`);
+  await evaluate(`window.__copied = ''; Object.defineProperty(navigator, 'share', { configurable:true, value:undefined }); Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async value => { window.__copied = value; } } })`);
   await evaluate(`window.prompt = () => ''`);
   await evaluate(`document.querySelector('#thread-list [data-action="open-create"]').click()`);
   assert.equal(await evaluate(`document.querySelector('label[for="new-message"]').textContent`), 'What do you want to communicate?');
@@ -242,8 +244,9 @@ try {
   await waitFor(`!document.querySelector('#draft-card').classList.contains('hidden') || document.querySelector('#toast').textContent.includes('not sent')`, 'Generate Draft produced no UI result.');
   const createError = await evaluate(`document.querySelector('#draft-card').classList.contains('hidden') ? document.querySelector('#toast').textContent : ''`);
   assert.equal(createError, '', 'Generate Draft failed in the browser: ' + createError);
-  assert.ok((await evaluate(`window.__copied`)).includes('Your response is needed. Join our private Relay conversation.'));
-  assert.match(await evaluate(`window.__copied`), /\/i\/[A-Za-z0-9_-]{22}/);
+  assert.equal(await evaluate(`window.__copied`), '', 'The invite must not be copied before approval.');
+  assert.equal(await evaluate(`document.querySelector('#conversation-actions').classList.contains('hidden')`), true, 'Share and destructive actions must stay hidden during first approval.');
+  assert.equal(await evaluate(`document.querySelector('#approve-draft-button').textContent`), 'Approve and share');
   console.log('Browser: first draft generated');
 
   const professionalDraft = await evaluate(`document.querySelector('#draft-text').textContent`);
@@ -263,6 +266,10 @@ try {
 
   await evaluate(`document.querySelector('[data-action="approve-draft"]').click()`);
   await waitFor(`document.querySelectorAll('#message-list .message.mine').length === 1`, 'Approved message did not enter the thread.');
+  await waitFor(`window.__copied.includes('Your response is needed. Join our private Relay conversation.')`, 'Approval did not prepare the urgent invite.');
+  assert.match(await evaluate(`window.__copied`), /\/i\/[A-Za-z0-9_-]{22}/);
+  assert.equal(await evaluate(`document.querySelector('#conversation-actions').classList.contains('hidden')`), false);
+  assert.equal(await evaluate(`document.querySelector('#share-button').classList.contains('hidden')`), false);
   console.log('Browser: first message approved');
   assert.equal(await evaluate(`document.querySelector('#message-list .message.mine .message-original')?.textContent`), 'You said: "Meet Friday at 3pm in the main office."');
   assert.equal(await evaluate(`document.querySelector('#representative-toggle').textContent`), 'Representative ON');

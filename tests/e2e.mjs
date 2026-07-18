@@ -100,12 +100,11 @@ try {
   const created = await owner.wait(message => message.type === 'goal-created');
   const goalId = created.goal.id;
   assert.match(goalId, /^G[0-9a-f]{32}$/);
-  const originalInvite = shortInviteFrom(created.shareUrl);
-  assert.equal(originalInvite.length, 22);
-  assert.equal(created.shareUrl.includes(goalId), false, 'the share URL must not expose the conversation ID');
-  const invitePage = await fetch(base + new URL(created.shareUrl).pathname);
-  assert.equal(invitePage.status, 200, `the short invite route should serve Relay: ${created.shareUrl}`);
-  assert.match(await invitePage.text(), /<title>Relay<\/title>/);
+  assert.equal(created.shareUrl, null, 'an invite must not exist before the first message is approved');
+  assert.equal(created.goal.canInvite, false);
+  owner.send({ type: 'rotate-invite', goalId });
+  const prematureShare = await owner.wait(message => message.type === 'error' && message.action === 'rotate-invite');
+  assert.equal(prematureShare.message, 'Approve the first message before sharing.');
   assert.equal((await fetch(base + '/i/too-short')).status, 404, 'malformed invite routes should not serve the app');
   assert.equal(created.goal.privateNotes[0].text, 'Meet Friday at 3pm in the main office.');
 
@@ -145,10 +144,18 @@ try {
   owner.send({ type: 'redraft', goalId, tone: 'friendly' });
   const finalTone = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
   assertMeaningPreserved(finalTone.goal.pendingDraft.draft);
+  const inviteReady = owner.wait(message => message.type === 'invite-ready' && message.goalId === goalId);
+  const approvedUpdate = owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);
   owner.send({ type: 'approve-outbound', goalId });
-  const ownerApproved = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);
+  const [ownerApproved, ready] = await Promise.all([approvedUpdate, inviteReady]);
   assert.equal(ownerApproved.goal.thread[0].from, profiles[0].profile.id);
   assert.equal(ownerApproved.goal.thread[0].privateOriginal, 'Meet Friday at 3pm in the main office.');
+  assert.equal(ownerApproved.goal.canInvite, true);
+  const originalInvite = shortInviteFrom(ready.shareUrl);
+  assert.equal(ready.shareUrl.includes(goalId), false, 'the share URL must not expose the conversation ID');
+  const invitePage = await fetch(base + new URL(ready.shareUrl).pathname);
+  assert.equal(invitePage.status, 200, `the short invite route should serve Relay: ${ready.shareUrl}`);
+  assert.match(await invitePage.text(), /<title>Relay<\/title>/);
 
   owner.send({ type: 'rotate-invite', goalId });
   const rotated = await owner.wait(message => message.type === 'invite-rotated' && message.goalId === goalId);
@@ -233,8 +240,7 @@ try {
   const attributionGoalId = attributionCreated.goal.id;
   const preApprovalPeerBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[1].recoveryCode } });
   const preApprovalPeerThread = preApprovalPeerBootstrap.body.threads.find(thread => thread.goalId === attributionGoalId);
-  assert.match(preApprovalPeerThread.title, /^Conversation with /);
-  assert.doesNotMatch(preApprovalPeerThread.title + ' ' + preApprovalPeerThread.summary, /tight spot|500 units/i, 'an unapproved draft must not appear in the recipient conversation list');
+  assert.equal(preApprovalPeerThread, undefined, 'an unapproved direct draft must not appear in the recipient conversation list');
   owner.send({ type: 'approve-outbound', goalId: attributionGoalId });
   const attributionApproved = await participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 1);
   const attributionOwnerView = owner.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 2);
@@ -273,7 +279,10 @@ try {
 
   owner.send({ type: 'create-goal', message: 'Concurrency check.', tone: 'direct' });
   const raceCreated = await owner.wait(message => message.type === 'goal-created' && message.goal.id !== goalId);
-  const raceInvite = shortInviteFrom(raceCreated.shareUrl);
+  assert.equal(raceCreated.shareUrl, null);
+  const raceReady = owner.wait(message => message.type === 'invite-ready' && message.goalId === raceCreated.goal.id);
+  owner.send({ type: 'approve-outbound', goalId: raceCreated.goal.id });
+  const raceInvite = shortInviteFrom((await raceReady).shareUrl);
   const participantRace = participant.wait(message => message.type === 'invite-claimed' || (message.type === 'error' && message.action === 'claim-invite'));
   const outsiderRace = outsider.wait(message => message.type === 'invite-claimed' || (message.type === 'error' && message.action === 'claim-invite'));
   participant.send({ type: 'claim-invite', invite: raceInvite });
