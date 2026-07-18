@@ -7,8 +7,9 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 - Primary URL: https://relay.durgaai.com
 - Worker URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `06659b8f-fb82-47b2-9c7b-a43be912d1f3`
-- Git commit: `07cd2b1` (`Require a name before claiming invites`)
+- Active version: `78f5f35f-addd-4fbe-ac61-facc747db883`
+- Git commit: `a8e41eb` (`fix: focus invite onboarding on joining`)
+- Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
 - Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
 - Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
 
@@ -35,7 +36,7 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 - The recovery code restores the same profile, contacts, and conversations on another device.
 - Chrome or Gmail profile sync is not treated as authentication; the recovery code is required across devices.
 - A browser carrying a legacy `aid` can claim that identity once and preserve its old records.
-- A new participant must choose and save a name before an invite can be claimed. Unnamed profiles never enter a conversation.
+- A new participant sees a focused Join conversation popup and must save a name before the invite is claimed. Home, Contacts, and new-conversation actions stay hidden during this step.
 
 ## Conversation Guarantees
 
@@ -61,25 +62,23 @@ Both local and production end-to-end suites passed on the active release:
 6. Real-time sender deletion on both clients.
 7. Result resolution, conditional confirmation, and reopening.
 8. Remove for me and creator delete for everyone.
-9. Temporary test conversations deleted after verification.
+9. Focused invite-name popup opening the intended conversation on desktop and mobile.
+10. Temporary test conversations deleted after verification.
 
 The generated browser JavaScript is parsed separately before every dry-run build to prevent template-escaping regressions.
 
-## Proposed Short Invite Links (Not Implemented)
+## Short Invite Links
 
-Current invite links use `?invite=<goal-id>.<secret>` and continue to work.
+New invite links use `https://relay.durgaai.com/i/<token>`, where the token is a 22-character, 128-bit random value. Existing `?invite=<goal-id>.<secret>` links remain supported.
 
-The proposed format is `https://relay.durgaai.com/i/<token>`, where `<token>` is a 22-character, 128-bit random value. The token would remain one-time and first-claimant-only. Only its SHA-256 hash would be stored, and old query-string invite links would remain supported.
+- The URL does not expose the internal conversation ID.
+- Only the token's SHA-256 hash is stored in the invite mapping.
+- The first successful claim atomically invalidates the link.
+- Rotation and conversation deletion invalidate and remove the active mapping.
+- Simultaneous claims are serialized by conversation, including mixed legacy/new claims.
+- The browser's native Share sheet is used when available; Copy link remains the fallback.
 
-Expected user impact:
-
-- Links become substantially shorter and no longer expose the internal conversation ID.
-- Opening the link still shows the required name step before joining.
-- The first successful claim invalidates the link exactly as it does now.
-- Existing links and active conversations are not migrated or broken.
-- Relay can use the browser's native Share sheet when available, with Copy link as the fallback.
-
-Implementation requirements before production: serve `/i/<token>` as the app shell, resolve token hashes to conversations, serialize simultaneous claims by token, remove mappings after claim/rotation/deletion, preserve legacy invite handling, and pass local E2E plus browser tests.
+Opening a short link shows only the Relay header and Join conversation name popup. After the name is saved, Relay claims the invite and opens that conversation directly.
 
 ## Commands
 

@@ -286,6 +286,10 @@ try {
 
   const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-mobile.png', Buffer.from(screenshot.data, 'base64'));
+  await evaluate(`document.querySelector('#home-conversations-tab').click(); document.querySelector('#thread-list .conversation-row [data-action="open-thread"]').click()`);
+  await waitFor(`!document.querySelector('#conversation-view').hidden`, 'The browser test conversation did not reopen for cleanup.');
+  await evaluate(`document.querySelector('[data-action="delete-everyone"]').click()`);
+  await waitFor(`!document.querySelector('#home-view').hidden && document.querySelectorAll('#thread-list .conversation-row').length === 0`, 'The browser test conversation was not deleted.');
   console.log('Browser E2E passed: focused invite naming, brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
 } catch (error) {
   console.error('Browser E2E failed:', error?.stack || error);
