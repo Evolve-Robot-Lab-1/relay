@@ -24,6 +24,9 @@ export const HTML = `<!doctype html>
     .icon-btn:hover{border-color:#435047;background:var(--panel2)}
     .view[hidden],.hidden{display:none!important}
     .section{margin-top:24px}
+    .home-tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);margin:2px 0 18px}
+    .home-tab{height:42px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-weight:700}
+    .home-tab.active{border-bottom-color:var(--green);color:var(--text)}
     .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
     .section-title{margin:0;font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase}
     .text-btn{border:0;background:transparent;color:var(--muted);padding:3px 0}
@@ -85,26 +88,33 @@ export const HTML = `<!doctype html>
     .facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
     .fact{border:1px solid var(--line);border-radius:4px;padding:4px 7px;color:#c6cec8;font-size:11px}
     .result-actions{display:flex;gap:7px;margin-top:12px}
-    .messages{min-height:230px;max-height:46vh;overflow:auto;padding:4px 0 12px}
-    .private-notes{border-bottom:1px solid var(--line);margin-bottom:13px;padding-bottom:7px}
-    .note{font-size:12px;color:#99a69e;padding:8px 10px;border-left:2px solid #39443d;margin:6px 0;background:#0c0e0d;overflow-wrap:anywhere}
-    .message{width:min(86%,580px);margin:9px 0;padding:10px 35px 10px 11px;border:1px solid var(--line);border-radius:var(--radius);position:relative;overflow-wrap:anywhere;background:var(--panel)}
-    .message.mine{margin-left:auto;background:#123020;border-color:#1a5b3b}
+    .messages{min-height:230px;max-height:52vh;overflow:auto;padding:8px 0 14px}
+    .message{width:fit-content;max-width:min(82%,580px);margin:7px 0;padding:9px 34px 9px 10px;border:1px solid #aa3333;border-radius:6px;position:relative;overflow-wrap:anywhere;background:#1a0d0d}
+    .message.mine{margin-left:auto;text-align:right;background:#0d2137;border-color:#0055aa}
     .message .who{font-size:10px;color:var(--muted);font-weight:800;text-transform:uppercase;margin-bottom:4px}
+    .message.mine .who{color:#4488ff}.message:not(.mine) .who{color:#ff6644}
+    .message-original{font-size:11px;color:#66717a;font-style:italic;margin-top:6px;border-top:1px solid #33404b;padding-top:5px}
     .message .when{font-size:10px;color:#66716a;margin-top:5px}
     .message-delete{position:absolute;right:5px;top:5px;width:26px;height:26px;border:0;background:transparent;color:#718078;font-size:18px;border-radius:4px}
     .message-delete:hover{background:#ffffff0b;color:var(--red)}
-    .draft-card{border:1px solid #286849;background:#102319;padding:13px;margin:10px 0;border-radius:var(--radius)}
+    .draft-card{border:1px solid #00ff8840;background:#151816;padding:13px;margin:14px 0;border-radius:6px}
     .draft-card h3{font-size:11px;text-transform:uppercase;color:var(--green);margin:0 0 8px}
     .draft-text{font-size:14px;overflow-wrap:anywhere}
     .draft-actions{display:flex;gap:7px;margin-top:12px;align-items:center;flex-wrap:wrap}
-    .draft-actions select{width:auto;height:40px}
+    .draft-original{font-size:11px;color:#66716a;font-style:italic;margin-top:7px}
+    .tone-options{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:12px}
+    .tone-option{height:32px;border:1px solid var(--line);border-radius:4px;background:#090b0a;color:var(--muted);font-size:11px}
+    .tone-option.active{border-color:var(--green);background:#102d20;color:var(--green)}
+    .draft-status{min-height:17px;color:var(--muted);font-size:11px;margin-top:6px}
     .composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;position:sticky;bottom:0;background:var(--bg);padding:10px 0 0}
     .composer textarea{min-height:44px;max-height:120px}
     .composer .primary{height:44px}
+    .representative-row{display:flex;justify-content:flex-end;padding-top:7px}
+    .representative-toggle{height:28px;border:1px solid var(--green);border-radius:4px;background:#102d20;color:var(--green);font-size:11px;padding:0 9px}
+    .representative-toggle.off{border-color:var(--line);background:#101211;color:var(--muted)}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{width:92%}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
   </style>
 </head>
 <body>
@@ -119,11 +129,12 @@ export const HTML = `<!doctype html>
         <div><strong>Protect your profile</strong><span>Keep your conversations and contacts when you change devices.</span></div>
         <button class="primary" type="button" data-action="open-profile">View recovery code</button>
       </div>
-      <section class="section">
+      <div class="home-tabs"><button id="home-conversations-tab" class="home-tab active" type="button" data-action="set-home-tab" data-tab="conversations">&#128172; Conversations</button><button id="home-contacts-tab" class="home-tab" type="button" data-action="set-home-tab" data-tab="contacts">&#128100; Contacts</button></div>
+      <section id="home-conversations-panel" class="section">
         <div class="section-head"><h1 class="section-title">Active conversations</h1><button class="text-btn danger" type="button" data-action="clear-conversations">Clear all</button></div>
         <div id="thread-list" class="list"></div>
       </section>
-      <section class="section">
+      <section id="home-contacts-panel" class="section hidden">
         <div class="section-head"><h2 class="section-title">Contacts</h2></div>
         <div id="contact-list" class="list"></div>
       </section>
@@ -136,20 +147,20 @@ export const HTML = `<!doctype html>
         <div><h1 id="conversation-title">Conversation</h1><div class="convo-meta"><span id="conversation-status" class="badge">Draft</span><span id="conversation-peer"></span></div></div>
         <div class="convo-actions"><button id="share-button" class="small-btn hidden" type="button" data-action="share-invite">Share invite</button><button class="small-btn danger" type="button" data-action="remove-conversation">Remove</button><button id="delete-everyone-button" class="small-btn danger hidden" type="button" data-action="delete-everyone">Delete for all</button></div>
       </div>
-      <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private">Private view</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared">Shared view</button></div>
+      <div class="tabs"><button id="private-tab" class="tab active" type="button" data-action="set-tab" data-tab="private">&#128274; Private</button><button id="shared-tab" class="tab" type="button" data-action="set-tab" data-tab="shared">&#127760; Shared</button></div>
+      <section id="draft-card" class="draft-card hidden">
+        <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-original" class="draft-original"></div><div id="draft-facts" class="facts"></div>
+        <div id="tone-options" class="tone-options"><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="professional">Professional</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="friendly">Friendly</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="direct">Direct</button><button class="tone-option" type="button" data-action="set-draft-tone" data-tone="casual">Casual</button></div>
+        <div id="draft-status" class="draft-status"></div><div class="draft-actions"><button class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button></div>
+      </section>
       <section id="result-panel" class="result-panel">
         <div class="result-head"><h2>Conversation result</h2><span id="result-state" class="badge">Open</span></div>
         <p id="result-summary" class="result-summary">No clear result yet.</p>
         <div id="result-facts" class="facts"></div>
         <div id="result-actions" class="result-actions"></div>
       </section>
-      <div id="private-notes" class="private-notes"></div>
       <div id="message-list" class="messages"></div>
-      <section id="draft-card" class="draft-card hidden">
-        <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-facts" class="facts"></div>
-        <div class="draft-actions"><button class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button><select id="draft-tone" aria-label="Conversation tone"><option value="professional">Professional</option><option value="friendly">Friendly</option><option value="direct">Direct</option><option value="casual">Casual</option></select></div>
-      </section>
-      <div id="composer" class="composer"><textarea id="reply-input" rows="1" maxlength="4000" placeholder="Write a reply..."></textarea><button class="primary" type="button" data-action="draft-reply">Send</button></div>
+      <div id="composer-area"><div class="composer"><textarea id="reply-input" rows="1" maxlength="4000" placeholder="Write a reply..."></textarea><button id="reply-button" class="primary" type="button" data-action="draft-reply">Send</button></div><div class="representative-row"><button id="representative-toggle" class="representative-toggle" type="button" data-action="toggle-representative">Representative ON</button></div></div>
     </section>
   </main>
 
@@ -189,7 +200,7 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), tab: 'private', welcomed: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const shortId = id => id ? id.slice(0, 7) : '';
@@ -341,18 +352,32 @@ export const HTML = `<!doctype html>
       if (message.type === 'goal-updated') {
         message.goal = normalizeGoal(message.goal);
         if (state.goal?.id === message.goal.id) {
+          if (state.toneUpdating) {
+            state.toneUpdating = false;
+            const appliedTone = message.goal.pendingDraft?.tone || message.goal.tone || 'professional';
+            state.toneNotice = message.goal.pendingDraft ? appliedTone.charAt(0).toUpperCase() + appliedTone.slice(1) + ' tone applied' : '';
+          }
           state.goal = message.goal;
           renderConversation();
         }
         return;
       }
       if (message.type === 'invite-rotated') return copyText(message.shareUrl, 'Invite link copied.');
+      if (message.type === 'reply-sent' && state.goal?.id === message.goalId) {
+        state.replySending = false;
+        byId('reply-input').value = '';
+        renderConversation();
+        return;
+      }
       if (message.type === 'conversation-removed' || message.type === 'conversation-deleted' || message.type === 'conversations-cleared') {
         if (!message.goalId || state.goal?.id === message.goalId) goHome();
         return;
       }
       if (message.type === 'error') {
         byId('create-button').disabled = false;
+        state.toneUpdating = false;
+        if (message.action === 'draft-reply') state.replySending = false;
+        if (state.goal) renderConversation();
         toast(message.message || 'The action could not be completed.');
       }
     }
@@ -369,6 +394,10 @@ export const HTML = `<!doctype html>
     function renderHome() {
       renderThreads();
       renderContacts();
+      byId('home-conversations-tab').classList.toggle('active', state.homeTab === 'conversations');
+      byId('home-contacts-tab').classList.toggle('active', state.homeTab === 'contacts');
+      byId('home-conversations-panel').classList.toggle('hidden', state.homeTab !== 'conversations');
+      byId('home-contacts-panel').classList.toggle('hidden', state.homeTab !== 'contacts');
       const useful = state.threads.some(thread => ['active','confirming','resolved','closed'].includes(thread.status));
       byId('protect-banner').classList.toggle('hidden', !useful || localStorage.getItem('relayRecoveryAcknowledged') === '1');
     }
@@ -449,12 +478,22 @@ export const HTML = `<!doctype html>
       renderResult(goal);
       renderMessages(goal);
       renderDraft(goal);
-      byId('composer').classList.toggle('hidden', ['resolved','closed'].includes(goal.status) || Boolean(goal.pendingDraft));
+      byId('composer-area').classList.toggle('hidden', ['resolved','closed'].includes(goal.status) || Boolean(goal.pendingDraft));
+      const representative = goal.representativeMode !== false;
+      const toggle = byId('representative-toggle'); toggle.textContent = representative ? 'Representative ON' : 'Representative OFF'; toggle.classList.toggle('off', !representative);
+      const reply = byId('reply-button');
+      reply.textContent = state.replySending ? 'Sending...' : representative ? 'Send' : 'Send direct';
+      reply.disabled = state.replySending;
+      byId('reply-input').disabled = state.replySending;
+      toggle.disabled = state.replySending;
     }
 
     function renderResult(goal) {
       const result = goal.result || {};
-      const panel = byId('result-panel'); panel.classList.toggle('confirmed', ['confirmed','resolved','closed'].includes(result.status));
+      const panel = byId('result-panel');
+      const meaningful = Boolean(result.requiresConfirmation || ['confirmed','resolved','closed'].includes(result.status) || (result.type && result.type !== 'progress' && goal.thread.length > 1));
+      panel.classList.toggle('hidden', !meaningful);
+      panel.classList.toggle('confirmed', ['confirmed','resolved','closed'].includes(result.status));
       const badge = byId('result-state');
       const stateLabels = { open:'Open', confirming:'Details to confirm', confirmed:'Confirmed', resolved:'Resolved', closed:'Closed' };
       badge.textContent = stateLabels[result.status] || 'Open';
@@ -477,18 +516,13 @@ export const HTML = `<!doctype html>
     }
 
     function renderMessages(goal) {
-      const notes = byId('private-notes'); notes.replaceChildren();
-      if (state.tab === 'private' && goal.privateNotes.length) {
-        notes.append(node('div', 'section-title', 'Your private instructions'));
-        goal.privateNotes.forEach(item => notes.append(node('div', 'note', item.text)));
-      }
-      notes.classList.toggle('hidden', state.tab !== 'private' || !goal.privateNotes.length);
       const list = byId('message-list'); list.replaceChildren();
       if (!goal.thread.length) list.append(node('div', 'empty', 'No approved messages have been shared yet.'));
       goal.thread.forEach(message => {
         const mine = message.from === state.profile.id;
         const item = node('article', 'message' + (mine ? ' mine' : ''));
         item.append(node('div', 'who', mine ? 'You' : labelFor(goal.participants.find(profile => profile.id === message.from))), node('div', '', message.text));
+        if (mine && state.tab === 'private' && message.privateOriginal) item.append(node('div', 'message-original', 'You said: "' + message.privateOriginal + '"'));
         item.append(node('div', 'when', new Date(message.createdAt).toLocaleString()));
         if (mine) {
           const remove = actionButton('\\u00d7', 'delete-message', 'message-delete'); remove.dataset.messageId = message.id; remove.title = 'Delete message'; remove.setAttribute('aria-label', 'Delete message'); item.append(remove);
@@ -500,9 +534,17 @@ export const HTML = `<!doctype html>
 
     function renderDraft(goal) {
       const card = byId('draft-card'); card.classList.toggle('hidden', !goal.pendingDraft);
-      if (!goal.pendingDraft) return;
+      if (!goal.pendingDraft) { state.toneUpdating = false; state.toneNotice = ''; return; }
       byId('draft-text').textContent = goal.pendingDraft.draft;
-      byId('draft-tone').value = goal.pendingDraft.tone || goal.tone || 'professional';
+      byId('draft-original').textContent = goal.pendingDraft.original ? 'You said: "' + goal.pendingDraft.original + '"' : '';
+      const selectedTone = goal.pendingDraft.tone || goal.tone || 'professional';
+      byId('tone-options').querySelectorAll('[data-tone]').forEach(button => {
+        button.classList.toggle('active', button.dataset.tone === selectedTone);
+        button.disabled = state.toneUpdating;
+      });
+      card.querySelectorAll('[data-action="approve-draft"],[data-action="reject-draft"]').forEach(button => { button.disabled = state.toneUpdating; });
+      const toneLabel = selectedTone.charAt(0).toUpperCase() + selectedTone.slice(1);
+      byId('draft-status').textContent = state.toneUpdating ? 'Updating tone...' : state.toneNotice || toneLabel + ' tone selected';
       const facts = byId('draft-facts'); facts.replaceChildren();
       [['date','Date'],['time','Time'],['location','Location']].forEach(([key,label]) => { if (goal.pendingDraft.facts?.[key]) facts.append(node('span', 'fact', label + ': ' + goal.pendingDraft.facts[key])); });
     }
@@ -537,6 +579,7 @@ export const HTML = `<!doctype html>
       if (!target) return;
       const action = target.dataset.action;
       if (action === 'open-create') return openCreate();
+      if (action === 'set-home-tab') { state.homeTab = target.dataset.tab; renderHome(); return; }
       if (action === 'message-contact') return openCreate(target.dataset.contactId);
       if (action === 'go-home') return goHome();
       if (action === 'open-profile') {
@@ -563,7 +606,19 @@ export const HTML = `<!doctype html>
       if (action === 'unblock-contact') return send({ type:'unblock-contact', contactId:target.dataset.contactId });
       if (!state.goal) return;
       if (action === 'set-tab') { state.tab = target.dataset.tab; renderConversation(); return; }
-      if (action === 'draft-reply') { const text = byId('reply-input').value.trim(); if (!text) return; byId('reply-input').value = ''; send({ type:'draft-reply', goalId:state.goal.id, text }); return; }
+      if (action === 'draft-reply') {
+        const text = byId('reply-input').value.trim(); if (!text || state.replySending) return;
+        state.replySending = true; renderConversation();
+        if (!send({ type:'draft-reply', goalId:state.goal.id, text })) { state.replySending = false; renderConversation(); }
+        return;
+      }
+      if (action === 'toggle-representative') return send({ type:'toggle-representative', goalId:state.goal.id });
+      if (action === 'set-draft-tone') {
+        if (!state.goal.pendingDraft || target.dataset.tone === state.goal.pendingDraft.tone) return;
+        state.toneUpdating = true; state.toneNotice = ''; renderDraft(state.goal);
+        if (!send({ type:'redraft', goalId:state.goal.id, tone:target.dataset.tone })) { state.toneUpdating = false; renderDraft(state.goal); }
+        return;
+      }
       if (action === 'approve-draft') return send({ type:'approve-outbound', goalId:state.goal.id });
       if (action === 'reject-draft') return send({ type:'reject-outbound', goalId:state.goal.id });
       if (action === 'delete-message') { if (confirm('Delete this message for both participants?')) send({ type:'delete-message', goalId:state.goal.id, messageId:target.dataset.messageId }); return; }
@@ -578,7 +633,6 @@ export const HTML = `<!doctype html>
 
     byId('reply-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('[data-action="draft-reply"]').click(); } });
     byId('new-message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('create-button').click(); } });
-    byId('draft-tone').addEventListener('change', event => { if (state.goal?.pendingDraft) send({ type:'redraft', goalId:state.goal.id, tone:event.target.value }); });
     byId('profile-button').addEventListener('click', () => document.querySelector('[data-action="open-profile"]').click());
     start();
   })();

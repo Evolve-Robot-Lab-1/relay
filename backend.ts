@@ -1,7 +1,15 @@
-const AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8';
+const CLOUDFLARE_AI_MODELS = ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b'];
+const GROQ_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DELETED_VALUE = '__relay_deleted_v1__';
 const PROFILE_PREFIX = 'RLY1';
 const TONES = new Set(['professional', 'friendly', 'direct', 'casual']);
+const TONE_GUIDANCE: Record<string, string> = {
+  professional: 'Use polished, respectful language, complete sentences, and no slang.',
+  friendly: 'Sound warm and approachable. Use natural contractions and gentle wording without becoming overly enthusiastic.',
+  direct: 'Lead with the request, answer, or boundary. Remove unnecessary softeners and keep the wording concise.',
+  casual: 'Use relaxed, everyday conversational language and contractions. Avoid formal or corporate phrasing.'
+};
 const FACT_KEYS = ['date', 'time', 'location'];
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -30,6 +38,69 @@ async function sha256(value: string) {
 
 function cleanText(value: unknown, max = 4000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function jsonStringField(value: string, key: string) {
+  const match = new RegExp(`"${key}"\\s*:\\s*"`, 'i').exec(value);
+  if (!match) return '';
+  const start = match.index + match[0].length - 1;
+  let escaped = false;
+  for (let index = start + 1; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"' && !escaped) {
+      try { return cleanText(JSON.parse(value.slice(start, index + 1))); } catch { return ''; }
+    }
+    if (character === '\\' && !escaped) escaped = true;
+    else escaped = false;
+  }
+  return '';
+}
+
+function draftPayload(value: string) {
+  try { return JSON.parse(value); }
+  catch {
+    const draft = jsonStringField(value, 'draft');
+    if (!draft) return null;
+    return {
+      draft,
+      resultSummary: jsonStringField(value, 'resultSummary') || draft,
+      resultType: 'progress',
+      requiresConfirmation: false,
+      facts: { date: null, time: null, location: null }
+    };
+  }
+}
+
+function modelResultText(result: any) {
+  const direct = cleanText(result, 10_000) || cleanText(result?.response, 10_000) || cleanText(result?.output_text, 10_000);
+  if (direct) return direct;
+  if (!Array.isArray(result?.output)) return '';
+  const parts: string[] = [];
+  for (const item of result.output) {
+    if (item?.type && item.type !== 'message') continue;
+    if (Array.isArray(item?.content)) {
+      for (const content of item.content) {
+        if (content?.type && !['output_text', 'text'].includes(content.type)) continue;
+        const text = cleanText(content?.text || content?.content, 10_000);
+        if (text) parts.push(text);
+      }
+    } else {
+      const text = cleanText(item?.text || item?.content, 10_000);
+      if (text) parts.push(text);
+    }
+  }
+  return cleanText(parts.join('\n'), 10_000);
+}
+
+function preservesExplicitIntent(raw: string, draft: string) {
+  const source = raw.toLocaleLowerCase();
+  const output = draft.toLocaleLowerCase();
+  const numbers = source.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
+  if (!numbers.every(number => output.includes(number))) return false;
+  if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return false;
+  if (/(not comfortable|rather not|do not want|don't want).{0,30}(share|disclos|tell)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|won't|will not).{0,40}(share|disclos|tell)|keep.{0,20}private/.test(output)) return false;
+  if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return false;
+  return true;
 }
 
 function cleanName(value: unknown) {
@@ -289,6 +360,7 @@ export class RelayStore {
         case 'approve-outbound': return await this.approveDraft(profileId, message.goalId);
         case 'reject-outbound': return await this.rejectDraft(profileId, message.goalId);
         case 'redraft': return await this.redraft(profileId, message);
+        case 'toggle-representative': return await this.toggleRepresentative(profileId, message.goalId);
         case 'delete-message': return await this.deleteMessage(profileId, message);
         case 'remove-conversation': return await this.removeConversation(profileId, message.goalId);
         case 'delete-conversation-everyone': return await this.deleteConversationEveryone(profileId, message.goalId);
@@ -365,6 +437,7 @@ export class RelayStore {
       inviteClaimedAt: targetId ? now : null,
       status: 'draft',
       tone,
+      representativeMode: { [profileId]: true },
       thread: [],
       privateNotes: [{ id: `N${randomHex(12)}`, ownerId: profileId, text: raw, createdAt: now }],
       pendingDraft: { ownerId: profileId, draft: drafted.draft, noteId: null, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: now },
@@ -395,6 +468,8 @@ export class RelayStore {
     if (await this.isBlockedEitherWay(goal.creatorId, profileId)) throw new Error('Invite unavailable.');
 
     goal.participants.push(profileId);
+    goal.representativeMode ||= {};
+    goal.representativeMode[profileId] = true;
     goal.inviteHash = null;
     goal.inviteClaimedAt = Date.now();
     if (goal.status === 'waiting') goal.status = goal.result?.status === 'confirming' ? 'confirming' : 'active';
@@ -422,10 +497,13 @@ export class RelayStore {
     if (!raw) throw new Error('Enter a message.');
     const tone = goal.tone || 'professional';
     const peerId = goal.participants.find((id: string) => id !== profileId) || null;
-    const drafted = await this.makeDraft(profileId, peerId, raw, tone, goal);
+    const representativeOn = goal.representativeMode?.[profileId] !== false;
+    const drafted = representativeOn
+      ? await this.makeDraft(profileId, peerId, raw, tone, goal)
+      : { draft: raw, resultSummary: raw, resultType: 'progress', requiresConfirmation: false, facts: { date: null, time: null, location: null } };
     const note = { id: `N${randomHex(12)}`, ownerId: profileId, text: raw, createdAt: Date.now() };
     goal.privateNotes.push(note);
-    goal.thread.push({ id: `M${randomHex(16)}`, from: profileId, text: drafted.draft, createdAt: Date.now(), deletedAt: null });
+    goal.thread.push({ id: `M${randomHex(16)}`, from: profileId, text: drafted.draft, noteId: note.id, createdAt: Date.now(), deletedAt: null });
     this.updateResultFromDraft(goal, drafted);
     goal.status = goal.participants.length === 1 ? 'waiting' : goal.result.status === 'confirming' ? 'confirming' : 'active';
     goal.updatedAt = Date.now();
@@ -433,13 +511,14 @@ export class RelayStore {
     await this.write(`goal:${goal.id}`, goal);
     for (const id of goal.participants) await this.addThread(id, goal.id);
     await this.broadcastGoal(goal);
+    this.sendTo(profileId, { type: 'reply-sent', goalId: goal.id });
   }
 
   async approveDraft(profileId: string, goalId: unknown) {
     const goal = await this.authorizedGoal(profileId, goalId);
     const pending = goal.pendingDraft;
     if (!pending || pending.ownerId !== profileId) throw new Error('No draft is waiting for your approval.');
-    const message = { id: `M${randomHex(16)}`, from: profileId, text: pending.draft, createdAt: Date.now(), deletedAt: null };
+    const message = { id: `M${randomHex(16)}`, from: profileId, text: pending.draft, noteId: pending.noteId, createdAt: Date.now(), deletedAt: null };
     goal.thread.push(message);
     goal.pendingDraft = null;
     this.updateResultFromDraft(goal, pending);
@@ -469,9 +548,18 @@ export class RelayStore {
     if (!note) throw new Error('Original note not found.');
     const tone = TONES.has(message.tone) ? message.tone : goal.tone || 'professional';
     const peerId = goal.participants.find((id: string) => id !== profileId) || null;
-    const drafted = await this.makeDraft(profileId, peerId, note.text, tone, goal);
+    const drafted = await this.makeDraft(profileId, peerId, note.text, tone, goal, pending.draft);
     goal.pendingDraft = { ...pending, draft: drafted.draft, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: Date.now() };
     goal.tone = tone;
+    goal.updatedAt = Date.now();
+    await this.write(`goal:${goal.id}`, goal);
+    await this.broadcastGoal(goal);
+  }
+
+  async toggleRepresentative(profileId: string, goalId: unknown) {
+    const goal = await this.authorizedGoal(profileId, goalId);
+    goal.representativeMode ||= {};
+    goal.representativeMode[profileId] = goal.representativeMode[profileId] === false ? true : false;
     goal.updatedAt = Date.now();
     await this.write(`goal:${goal.id}`, goal);
     await this.broadcastGoal(goal);
@@ -730,6 +818,7 @@ export class RelayStore {
       raw.thread ||= [];
       raw.privateNotes ||= [];
       raw.removedBy ||= [];
+      raw.representativeMode ||= {};
       if (!raw.result) {
         raw.result = resultFromAgreement(raw.agreement);
         if (raw.status === 'agreed') raw.status = 'resolved';
@@ -761,6 +850,7 @@ export class RelayStore {
       inviteClaimedAt: raw.to ? (raw.updatedAt || now) : null,
       status: statusFromLegacy(raw.status, participants),
       tone: TONES.has(raw.tone) ? raw.tone : 'professional',
+      representativeMode: raw.representativeMode || {},
       thread,
       privateNotes: raw.original ? [{ id: `N${randomHex(12)}`, ownerId: raw.from, text: cleanText(raw.original), createdAt: raw.createdAt || now }] : [],
       pendingDraft: pendingOwner ? { ownerId: pendingOwner, draft: cleanText(raw.pendingMessage.draft), noteId: null, facts: factsFrom(raw.pendingMessage.proposedFacts), resultSummary: cleanText(raw.pendingMessage.draft), resultType: 'progress', requiresConfirmation: false, tone: raw.tone || 'professional', createdAt: raw.pendingMessage.createdAt || now } : null,
@@ -780,15 +870,32 @@ export class RelayStore {
       const profile = await this.read(`profile:${id}`);
       profiles[id] = { id, name: profile?.name || '' };
     }
+    const ownerNotes = goal.privateNotes.filter((item: any) => item.ownerId === profileId).sort((a: any, b: any) => a.createdAt - b.createdAt);
+    const usedNotes = new Set<string>();
+    const mappedThread = goal.thread.map((item: any) => {
+      let privateOriginal: string | null = null;
+      if (item.from === profileId) {
+        let note = item.noteId ? ownerNotes.find((candidate: any) => candidate.id === item.noteId) : null;
+        if (!note) note = ownerNotes.find((candidate: any) => !usedNotes.has(candidate.id) && candidate.createdAt <= item.createdAt);
+        if (note) {
+          usedNotes.add(note.id);
+          privateOriginal = note.text;
+        }
+      }
+      return { id: item.id, from: item.from, text: item.text, privateOriginal, createdAt: item.createdAt, deletedAt: item.deletedAt };
+    });
+    const visibleThread = mappedThread.filter((item: any) => !item.deletedAt).map(({ deletedAt, ...item }: any) => item);
+    const pendingNote = goal.pendingDraft?.ownerId === profileId ? ownerNotes.find((item: any) => item.id === goal.pendingDraft.noteId) : null;
     return {
       id: goal.id,
       creatorId: goal.creatorId,
       participants: goal.participants.map((id: string) => profiles[id]),
       status: goal.status,
       tone: goal.tone,
-      thread: goal.thread.filter((item: any) => !item.deletedAt).map((item: any) => ({ id: item.id, from: item.from, text: item.text, createdAt: item.createdAt })),
+      representativeMode: goal.representativeMode?.[profileId] !== false,
+      thread: visibleThread,
       privateNotes: goal.privateNotes.filter((item: any) => item.ownerId === profileId).map((item: any) => ({ id: item.id, text: item.text, createdAt: item.createdAt })),
-      pendingDraft: goal.pendingDraft?.ownerId === profileId ? { draft: goal.pendingDraft.draft, noteId: goal.pendingDraft.noteId, facts: goal.pendingDraft.facts, tone: goal.pendingDraft.tone } : null,
+      pendingDraft: goal.pendingDraft?.ownerId === profileId ? { draft: goal.pendingDraft.draft, original: pendingNote?.text || '', noteId: goal.pendingDraft.noteId, facts: goal.pendingDraft.facts, tone: goal.pendingDraft.tone } : null,
       result: goal.result,
       canDeleteEveryone: goal.creatorId === profileId,
       canInvite: goal.creatorId === profileId && goal.participants.length === 1,
@@ -804,30 +911,110 @@ export class RelayStore {
     }
   }
 
-  async makeDraft(profileId: string, peerId: string | null, raw: string, tone: string, goal: any) {
-    const fallback = { draft: raw, resultSummary: raw, resultType: 'progress', requiresConfirmation: false, facts: { date: null, time: null, location: null } };
-    if (!this.env.AI || !this.allow(`ai:${profileId}`, 40, 60_000)) return fallback;
-    const history = goal?.thread?.filter((item: any) => !item.deletedAt).slice(-8).map((item: any) => `${item.from === profileId ? 'You' : 'Other'}: ${item.text}`).join('\n') || '(none)';
-    const prompt = `You are Relay, a private communication representative. Understand the user's intent and improve the wording in a ${tone} tone. Keep the draft short, natural, and faithful to the user's meaning. Protect private thoughts and never invent facts or commitments. Move the conversation toward a clear result, but do not push for agreement. A result may be an agreement, answer, clarification, rejection, delivered request, communicated boundary, or closed conversation. Set requiresConfirmation to true only for a mutual commitment that both people should explicitly confirm. Extract optional date, time, and location. Return only valid JSON with this shape: {"draft":"...","resultSummary":"...","resultType":"agreement|answer|clarification|rejection|request_delivered|boundary|closed|progress","requiresConfirmation":false,"facts":{"date":null,"time":null,"location":null}}.`;
-    try {
-      const result = await this.env.AI.run(AI_MODEL, { messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: `Other participant: ${peerId || 'not joined'}\nRecent shared conversation:\n${history}\n\nPrivate instruction:\n${raw}` }
-      ] });
-      let response = cleanText(result?.response, 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-      const start = response.indexOf('{');
-      const end = response.lastIndexOf('}');
-      if (start >= 0 && end > start) response = response.slice(start, end + 1);
-      const parsed = JSON.parse(response);
-      return {
-        draft: cleanText(parsed.draft) || raw,
-        resultSummary: cleanText(parsed.resultSummary, 500) || cleanText(parsed.draft, 500) || raw,
-        resultType: ['agreement', 'answer', 'clarification', 'rejection', 'request_delivered', 'boundary', 'closed', 'progress'].includes(parsed.resultType) ? parsed.resultType : 'progress',
-        requiresConfirmation: parsed.requiresConfirmation === true,
-        facts: factsFrom(parsed.facts)
-      };
-    } catch {
-      return fallback;
+  async makeDraft(profileId: string, peerId: string | null, raw: string, tone: string, goal: any, previousDraft = '') {
+    if (!this.env.GROQ_API_KEY && !this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    if (!this.allow(`ai:${profileId}`, 40, 60_000)) throw new Error('Please wait a moment before requesting another rewrite.');
+    const recentMessages = goal?.thread?.filter((item: any) => !item.deletedAt).slice(-8) || [];
+    const history = recentMessages.map((item: any) => `${item.from === profileId ? 'User' : 'Other person'}: ${item.text}`).join('\n') || '(none)';
+    const latestOtherMessage = [...recentMessages].reverse().find((item: any) => item.from !== profileId)?.text || '(none)';
+    const messageKind = recentMessages.length ? 'reply' : 'opening message';
+    const toneRule = TONE_GUIDANCE[tone] || TONE_GUIDANCE.professional;
+    const prompt = `Return only one JSON object in the form {"draft":"the outgoing message"}. You are Relay, a message editor writing from the User to the Other person. Your only job is to express what the User intends to communicate.
+
+Priority order:
+1. Correct speaker ownership.
+2. Preserve the User's intent and meaning.
+3. Preserve every fact, amount, date, condition, question, rejection, and boundary.
+4. Apply the selected tone.
+5. Keep the message concise and natural.
+
+The private instruction is authoritative. Conversation history is context only. Never copy the Other person's first-person claims into the User's voice. Never answer on behalf of the Other person. Never invent reasons, facts, promises, commitments, consent, agreement, or enthusiasm. Do not expose or mention the private instruction. Do not add advice, analysis, labels, or negotiation strategy.
+
+For a short reply fragment, use the latest message to resolve references. Example: Other person says "I'm in a tight spot and need 500 units ASAP" and the User says "reason why?" The draft should ask why the Other person needs 500 units urgently; it must not say the User is in a tight spot.
+
+For a multi-part instruction, include every independent intent. Example: if the User says "I'm not comfortable sharing that. Cancel my request," the draft must communicate both the refusal to share and the cancellation.
+
+Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
+    const previous = cleanText(previousDraft);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const retryRule = attempt ? previous ? '\nThe prior draft did not visibly change. Return JSON only and restyle it with clearly different wording while preserving the exact same message.' : '\nThe previous response was invalid. Return only {"draft":"..."}.' : '';
+        const messages = [
+          { role: 'system', content: prompt },
+          { role: 'user', content: `Message type: ${messageKind}\nRecipient: ${peerId || 'not joined'}\nOther person's latest message:\n${latestOtherMessage}\n\nConversation context (reference only):\n${history}\n\nUser's private intent for this outgoing message:\n${raw}${previous ? `\n\nPrevious draft to restyle:\n${previous}` : ''}${retryRule}` }
+        ];
+        let response = cleanText(await this.runRewriteModel(messages), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        const start = response.indexOf('{');
+        const end = response.lastIndexOf('}');
+        if (start >= 0 && end > start) response = response.slice(start, end + 1);
+        const parsed = draftPayload(response);
+        if (!parsed) throw new Error('The AI response did not contain a usable outgoing draft.');
+        const draft = cleanText(parsed.draft);
+        if (!draft || (previous && draft.toLocaleLowerCase() === previous.toLocaleLowerCase())) continue;
+        if (!preservesExplicitIntent(raw, draft)) continue;
+        return {
+          draft,
+          resultSummary: cleanText(draft, 500),
+          resultType: 'progress',
+          requiresConfirmation: false,
+          facts: { date: null, time: null, location: null }
+        };
+      } catch (error: any) {
+        console.warn('Relay AI rewrite attempt failed:', cleanText(error?.message, 300) || 'Unknown AI response error.');
+      }
     }
+    throw new Error('Relay could not rewrite this message. Your private message was not sent. Please try again.');
+  }
+
+  async runRewriteModel(messages: any[]) {
+    if (this.env.GROQ_API_KEY) {
+      for (const model of GROQ_AI_MODELS) {
+        try {
+          const response = await fetch(GROQ_CHAT_URL, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${this.env.GROQ_API_KEY}`,
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              model,
+              messages,
+              temperature: 0.2,
+              max_completion_tokens: 450,
+              reasoning_effort: 'low',
+              response_format: { type: 'json_object' }
+            })
+          });
+          const data: any = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(cleanText(data?.error?.message, 240) || `Groq returned HTTP ${response.status}.`);
+          const content = cleanText(data?.choices?.[0]?.message?.content, 10_000);
+          if (!content) throw new Error('Groq returned an empty response.');
+          return content;
+        } catch (error: any) {
+          console.warn(`Groq ${model} rewrite failed:`, cleanText(error?.message, 300) || 'Unknown Groq error.');
+        }
+      }
+      console.warn('Groq models unavailable; using Workers AI fallback.');
+    }
+
+    if (!this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    const instructions = cleanText(messages.find(message => message.role === 'system')?.content, 10_000);
+    const input = cleanText(messages.find(message => message.role === 'user')?.content, 10_000);
+    for (const model of CLOUDFLARE_AI_MODELS) {
+      try {
+        const result = await this.env.AI.run(model, {
+          instructions,
+          input,
+          reasoning: { effort: 'low' },
+          max_output_tokens: 1800
+        });
+        const content = modelResultText(result);
+        if (!content) throw new Error('The model returned an empty response.');
+        return content;
+      } catch (error: any) {
+        console.warn(`Workers AI ${model} rewrite failed:`, cleanText(error?.message, 300) || 'Unknown Workers AI error.');
+      }
+    }
+    throw new Error('Workers AI models are temporarily unavailable.');
   }
 }

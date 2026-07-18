@@ -76,6 +76,14 @@ try {
   const unauthenticated = await request('/api/bootstrap');
   assert.equal(unauthenticated.response.status, 401);
 
+  const restored = await request('/api/profile/restore', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ recoveryCode: profiles[0].recoveryCode })
+  });
+  assert.equal(restored.response.status, 200, 'a saved recovery code should restore the same profile');
+  assert.equal(restored.body.profile.id, profiles[0].profile.id);
+
   await Promise.all([owner.connect(), participant.connect(), outsider.connect()]);
   owner.send({ type: 'set-name', name: 'Owner Test' });
   participant.send({ type: 'set-name', name: 'Participant Test' });
@@ -87,17 +95,46 @@ try {
   assert.ok(created.shareUrl.includes('?invite='));
   assert.equal(created.goal.privateNotes[0].text, 'Meet Friday at 3pm in the main office.');
 
+  const assertMeaningPreserved = draft => {
+    assert.match(draft, /Friday/i, 'tone rewrite must preserve the date');
+    assert.match(draft, /3(?::00)?\s*(?:p\.?m\.?)?/i, 'tone rewrite must preserve the time');
+    assert.match(draft, /main office/i, 'tone rewrite must preserve the location');
+  };
+  const professionalDraft = created.goal.pendingDraft.draft;
+  assertMeaningPreserved(professionalDraft);
+
   owner.send({ type: 'redraft', goalId, tone: 'friendly' });
-  await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
+  const friendlyUpdate = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
+  const friendlyDraft = friendlyUpdate.goal.pendingDraft.draft;
+  assertMeaningPreserved(friendlyDraft);
+  assert.notEqual(friendlyDraft.toLowerCase(), professionalDraft.toLowerCase(), 'Friendly must visibly restyle Professional');
+
+  owner.send({ type: 'redraft', goalId, tone: 'direct' });
+  const directUpdate = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'direct');
+  const directDraft = directUpdate.goal.pendingDraft.draft;
+  assertMeaningPreserved(directDraft);
+  assert.notEqual(directDraft.toLowerCase(), friendlyDraft.toLowerCase(), 'Direct must visibly restyle Friendly');
+
+  owner.send({ type: 'redraft', goalId, tone: 'casual' });
+  const casualUpdate = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'casual');
+  const casualDraft = casualUpdate.goal.pendingDraft.draft;
+  assertMeaningPreserved(casualDraft);
+  assert.notEqual(casualDraft.toLowerCase(), directDraft.toLowerCase(), 'Casual must visibly restyle Direct');
+
+  owner.send({ type: 'redraft', goalId, tone: 'friendly' });
+  const finalTone = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
+  assertMeaningPreserved(finalTone.goal.pendingDraft.draft);
   owner.send({ type: 'approve-outbound', goalId });
   const ownerApproved = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);
   assert.equal(ownerApproved.goal.thread[0].from, profiles[0].profile.id);
+  assert.equal(ownerApproved.goal.thread[0].privateOriginal, 'Meet Friday at 3pm in the main office.');
 
   const invite = new URL(created.shareUrl).searchParams.get('invite');
   participant.send({ type: 'claim-invite', invite });
   const joined = await participant.wait(message => message.type === 'invite-claimed' && message.goal.id === goalId);
   assert.equal(joined.goal.participants.length, 2);
   assert.equal(joined.goal.privateNotes.length, 0, 'private owner text must not cross profiles');
+  assert.equal(joined.goal.thread[0].privateOriginal, null, 'private originals must not cross profiles');
 
   outsider.send({ type: 'claim-invite', invite });
   const denied = await outsider.wait(message => message.type === 'error' && message.action === 'claim-invite');
@@ -106,10 +143,15 @@ try {
   assert.ok(owner.messages.some(message => message.type === 'bootstrap' && message.contacts.some(contact => contact.id === profiles[1].profile.id)));
   assert.ok(participant.messages.some(message => message.type === 'bootstrap' && message.contacts.some(contact => contact.id === profiles[0].profile.id)));
 
-  participant.send({ type: 'draft-reply', goalId, text: 'That works for me.', tone: 'friendly' });
-  const replied = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 2);
+  const ownerReply = owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 2);
+  const participantReply = participant.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 2);
+  const replyAcknowledged = participant.wait(message => message.type === 'reply-sent' && message.goalId === goalId);
+  participant.send({ type: 'draft-reply', goalId, text: 'That works for me.', tone: 'direct' });
+  const [replied, senderView] = await Promise.all([ownerReply, participantReply, replyAcknowledged]);
   assert.equal(replied.goal.pendingDraft, null, 'replies should auto-send after the first approval');
   assert.equal(replied.goal.tone, 'friendly', 'the first approved tone should remain fixed');
+  assert.equal(replied.goal.thread.at(-1).privateOriginal, null, 'reply originals must stay private');
+  assert.equal(senderView.goal.thread.at(-1).privateOriginal, 'That works for me.');
   const replyId = replied.goal.thread.find(message => message.from === profiles[1].profile.id).id;
 
   const ownerDeletion = owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);
@@ -133,15 +175,64 @@ try {
   owner.send({ type: 'continue-conversation', goalId });
   await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.status === 'active');
 
+  participant.send({ type: 'toggle-representative', goalId });
+  await participant.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.representativeMode === false);
+  participant.send({ type: 'draft-reply', goalId, text: 'send this exact pls' });
+  const directReply = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 2);
+  assert.equal(directReply.goal.thread.at(-1).text, 'send this exact pls', 'Representative OFF should send the exact reply');
+
   participant.send({ type: 'remove-conversation', goalId });
   await participant.wait(message => message.type === 'conversation-removed' && message.goalId === goalId);
   const ownerBootstrap = await request('/api/bootstrap', { headers: { authorization: 'Bearer ' + profiles[0].recoveryCode } });
   assert.ok(ownerBootstrap.body.threads.some(thread => thread.goalId === goalId));
+  assert.ok(ownerBootstrap.body.contacts.some(contact => contact.id === profiles[1].profile.id), 'contacts should persist with the restored profile');
 
   const ownerGlobalDeletion = owner.wait(message => message.type === 'conversation-deleted' && message.goalId === goalId);
   const participantGlobalDeletion = participant.wait(message => message.type === 'conversation-deleted' && message.goalId === goalId);
   owner.send({ type: 'delete-conversation-everyone', goalId });
   await Promise.all([ownerGlobalDeletion, participantGlobalDeletion]);
+
+  owner.send({
+    type: 'create-goal',
+    message: "I'm in a tight spot and need 500 units ASAP.",
+    tone: 'professional',
+    targetId: profiles[1].profile.id
+  });
+  const attributionCreated = await owner.wait(message => message.type === 'goal-created' && message.goal.id !== goalId);
+  const attributionGoalId = attributionCreated.goal.id;
+  owner.send({ type: 'approve-outbound', goalId: attributionGoalId });
+  await participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 1);
+  const attributionOwnerView = owner.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 2);
+  const attributionSenderView = participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 2);
+  participant.send({ type: 'draft-reply', goalId: attributionGoalId, text: 'reason why?' });
+  const [attributionReply, attributionPrivate] = await Promise.all([attributionOwnerView, attributionSenderView]);
+  const clarification = attributionReply.goal.thread.at(-1).text;
+  assert.match(clarification, /why|reason|explain/i, 'the reply should ask for the reason');
+  assert.doesNotMatch(clarification, /\bI(?:'m| am) in a tight spot|\bI need 500/i, 'the reply must not adopt the other person\'s claim');
+  assert.equal(attributionReply.goal.thread.at(-1).privateOriginal, null);
+  assert.equal(attributionPrivate.goal.thread.at(-1).privateOriginal, 'reason why?');
+  const boundaryOwnerView = owner.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 3);
+  const boundaryPeerView = participant.wait(message => message.type === 'goal-updated' && message.goal.id === attributionGoalId && message.goal.thread.length === 3);
+  owner.send({ type: 'draft-reply', goalId: attributionGoalId, text: "I'm not comfortable sharing that. Cancel my request." });
+  const [boundarySender, boundaryPeer] = await Promise.all([boundaryOwnerView, boundaryPeerView]);
+  const boundary = boundarySender.goal.thread.at(-1).text;
+  assert.match(boundary, /prefer not|not comfortable|rather not|don't want|do not want/i, 'the reply should preserve the user\'s boundary');
+  assert.match(boundary, /cancel|withdraw/i, 'the reply should preserve the cancellation');
+  assert.doesNotMatch(boundary, /agree|happy to|glad to/i, 'the reply must not force agreement or enthusiasm');
+  assert.equal(boundarySender.goal.thread.at(-1).privateOriginal, "I'm not comfortable sharing that. Cancel my request.");
+  assert.equal(boundaryPeer.goal.thread.at(-1).privateOriginal, null);
+  const attributionOwnerDeleted = owner.wait(message => message.type === 'conversation-deleted' && message.goalId === attributionGoalId);
+  const attributionParticipantDeleted = participant.wait(message => message.type === 'conversation-deleted' && message.goalId === attributionGoalId);
+  owner.send({ type: 'delete-conversation-everyone', goalId: attributionGoalId });
+  await Promise.all([attributionOwnerDeleted, attributionParticipantDeleted]);
+
+  owner.send({ type: 'block-contact', contactId: profiles[1].profile.id });
+  await owner.wait(message => message.type === 'bootstrap' && message.blocks.some(block => block.id === profiles[1].profile.id) && !message.contacts.some(contact => contact.id === profiles[1].profile.id));
+  participant.send({ type: 'create-goal', message: 'This direct conversation should be blocked.', targetId: profiles[0].profile.id });
+  const blockedDirect = await participant.wait(message => message.type === 'error' && message.action === 'create-goal');
+  assert.equal(blockedDirect.message, 'Contact is unavailable.');
+  owner.send({ type: 'unblock-contact', contactId: profiles[1].profile.id });
+  await owner.wait(message => message.type === 'bootstrap' && !message.blocks.some(block => block.id === profiles[1].profile.id));
 
   owner.send({ type: 'create-goal', message: 'Concurrency check.', tone: 'direct' });
   const raceCreated = await owner.wait(message => message.type === 'goal-created' && message.goal.id !== goalId);
@@ -156,7 +247,7 @@ try {
   owner.send({ type: 'delete-conversation-everyone', goalId: raceCreated.goal.id });
   await owner.wait(message => message.type === 'conversation-deleted' && message.goalId === raceCreated.goal.id);
 
-  console.log('E2E passed: auth, privacy, atomic invite lock, contacts, real-time deletion, result handling, and conversation removal.');
+  await new Promise(resolve => process.stdout.write('E2E passed: recovery, four tones, speaker attribution, privacy, invite lock, persistent contacts, blocking, deletion, results, Representative modes, and conversation removal.\n', resolve));
 } finally {
   owner.close();
   participant.close();

@@ -25,15 +25,18 @@ npm run deploy
 
 ## Conversation Rule
 
-Relay improves the user's conversation. It understands intent, improves wording, applies the selected tone, protects private thoughts, and keeps replies short and natural.
+Relay improves the user's conversation. It understands intent, improves wording, applies the selected tone, protects private thoughts, and keeps replies concise and natural without losing important meaning.
 
-A clear result may be an agreement, answer, clarification, rejection, delivered request, communicated boundary, or closed conversation. Mutual confirmation appears only for an actual shared commitment; agreement is not the default destination.
+A clear result may be an agreement, answer, clarification, rejection, delivered request, communicated boundary, or closed conversation. Relay helps the conversation progress without forcing an outcome. Mutual confirmation appears only for an actual shared commitment; agreement is not the default destination.
+
+Relay never invents facts, promises, commitments, consent, or enthusiasm. It never exposes a private instruction. Tone changes wording only, never meaning. With Representative OFF, Relay sends the user's exact words.
 
 ## Features
 
 - Frictionless profile creation with an optional cross-device recovery code
 - AI-assisted drafting with selectable tone
 - One-time first-message approval with a tone that stays fixed for the conversation
+- Per-conversation Representative ON/OFF control
 - Private and shared conversation views
 - Single-use, two-person invite links and permanent contacts
 - Sender-only message deletion synchronized in real time
@@ -68,4 +71,5 @@ npm run check
 
 # With npm run dev active in another terminal
 npm run test:e2e -- http://127.0.0.1:8787
+npm run test:browser -- http://127.0.0.1:8787
 ```
