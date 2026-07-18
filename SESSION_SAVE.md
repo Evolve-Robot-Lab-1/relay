@@ -33,6 +33,14 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 - Relay was built and hardened with Codex. Production inference currently uses Groq and Workers AI, not the OpenAI API; the submission must state this accurately.
 - The highest-priority hackathon decision is whether to add and evaluate GPT-5.6 as the primary generator or an independent fallback before submission.
 
+## Product Freeze And User Study
+
+- Effective 2026-07-19, Relay is under a feature freeze while real users test the MVP.
+- Do not add product features or make speculative workflow and UI changes.
+- The only planned engineering work is adding AI model capacity/reliability and privacy-safe operational logging.
+- Collect onboarding friction, draft quality failures, invite completion, reply completion, and direct user feedback without storing private message content.
+- Product changes after the freeze must be justified by repeated user evidence, not isolated preference or untested assumptions.
+
 ## Architecture
 
 - `server.ts` serves the nonce-protected client and forwards API/WebSocket traffic to one Durable Object.

@@ -394,6 +394,8 @@ Quality and trust metrics:
 
 ## Immediate Priorities
 
+Relay is under a feature freeze during the user study. Do not add product features or redesign workflows without repeated user evidence. The only active engineering exceptions are AI model capacity/reliability and privacy-safe operational logging.
+
 ### Before Build Week submission
 
 1. Decide and, if possible, implement the OpenAI GPT-5.6 runtime role.
@@ -401,6 +403,15 @@ Quality and trust metrics:
 3. Prepare the Devpost description, screenshots, repository access, and architecture visual.
 4. Add basic privacy-safe event monitoring and provider health visibility.
 5. Verify the final production build once after all submission changes.
+
+### User study focus
+
+- Observe whether a new user understands what to write privately.
+- Record where invite sharing and joining stop or slow down.
+- Capture drafts that fail to preserve intent or express the selected tone.
+- Measure whether the invited participant sends a first reply.
+- Ask what users expected Relay to do that it did not do.
+- Do not record private instructions or shared message content in analytics.
 
 ### After submission
 
