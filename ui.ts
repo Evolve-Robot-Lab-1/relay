@@ -5,6 +5,7 @@ export const HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
+  <meta name="description" content="AI representatives for clearer conversations.">
   <title>Relay</title>
   <style>
     :root{--bg:#080a09;--panel:#101311;--panel2:#171b18;--line:#29302b;--text:#f3f6f4;--muted:#8d9891;--green:#00e982;--green2:#00b969;--red:#ff5a64;--amber:#f2bb49;--blue:#61a8ff;--radius:6px;--max:760px}
@@ -14,12 +15,14 @@ export const HTML = `<!doctype html>
     button{cursor:pointer}
     button:disabled{cursor:not-allowed;opacity:.55}
     .shell{width:min(100%,var(--max));margin:0 auto;min-height:100vh;padding:18px 18px 92px}
-    header{height:48px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);margin-bottom:20px}
+    header{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);margin-bottom:20px;padding:7px 0}
     .brand{font-size:19px;font-weight:800;color:#fff}
     .brand span{color:var(--green)}
     .connection{font-size:11px;color:var(--muted);margin-left:9px}
     .connection.offline{color:var(--red)}
     .header-left{display:flex;align-items:baseline}
+    .header-copy{min-width:0}
+    .tagline{color:var(--muted);font-size:12px;margin-top:1px;overflow-wrap:anywhere}
     .icon-btn{width:36px;height:36px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:var(--radius);display:inline-grid;place-items:center;font-size:18px}
     .icon-btn:hover{border-color:#435047;background:var(--panel2)}
     .view[hidden],.hidden{display:none!important}
@@ -114,13 +117,13 @@ export const HTML = `<!doctype html>
     .representative-toggle.off{border-color:var(--line);background:#101211;color:var(--muted)}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.tagline{font-size:11px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
   </style>
 </head>
 <body>
   <main class="shell">
     <header>
-      <div class="header-left"><div class="brand">Re<span>lay</span></div><span id="connection" class="connection">Connecting</span></div>
+      <div class="header-copy"><div class="header-left"><div class="brand">Re<span>lay</span></div><span id="connection" class="connection">Connecting</span></div><div id="tagline" class="tagline">AI representatives for clearer conversations.</div></div>
       <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery">&#128100;</button>
     </header>
 
