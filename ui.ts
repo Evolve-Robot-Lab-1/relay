@@ -233,7 +233,7 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), inviteClaiming: false, homeTab: 'conversations', tab: 'private', welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const labelFor = profile => profile ? profile.name || 'Other person' : 'Waiting for participant';
@@ -372,7 +372,6 @@ export const HTML = `<!doctype html>
         state.welcomed = true;
         byId('connection').textContent = 'Connected';
         applyBootstrap(message);
-        if (state.invite) send({ type:'claim-invite', invite:state.invite });
         return;
       }
       if (message.type === 'bootstrap') return applyBootstrap(message);
@@ -388,6 +387,7 @@ export const HTML = `<!doctype html>
         state.goal = normalizeGoal(message.goal);
         if (message.type === 'invite-claimed') {
           state.invite = null;
+          state.inviteClaiming = false;
           history.replaceState(null, '', location.pathname);
           toast('Conversation joined.');
         }
@@ -422,6 +422,11 @@ export const HTML = `<!doctype html>
         byId('create-button').disabled = false;
         state.toneUpdating = false;
         if (message.action === 'set-name') state.nameSaving = false;
+        if (message.action === 'claim-invite') {
+          state.invite = null;
+          state.inviteClaiming = false;
+          history.replaceState(null, '', location.pathname);
+        }
         if (message.action === 'draft-reply') state.replySending = false;
         if (state.goal) renderConversation();
         renderNameBanner();
@@ -440,6 +445,7 @@ export const HTML = `<!doctype html>
       renderHome();
       renderProfile();
       if (savedName && state.profile?.name) toast('Name saved.');
+      claimPendingInvite();
     }
 
     function renderHome() {
@@ -461,9 +467,17 @@ export const HTML = `<!doctype html>
       const banner = byId('name-banner');
       const needsName = Boolean(state.profile && !state.profile.name?.trim());
       banner.classList.toggle('hidden', !needsName);
+      byId('name-banner-title').textContent = state.invite ? 'Choose a name to join' : 'Choose your display name';
+      banner.querySelector('span').textContent = state.invite ? 'The other person will see this name in the conversation.' : 'This is how people in your conversations will know you.';
       const button = byId('save-onboarding-name');
       button.disabled = state.nameSaving;
       button.textContent = state.nameSaving ? 'Saving...' : 'Save';
+    }
+
+    function claimPendingInvite() {
+      if (!state.invite || state.inviteClaiming || !state.profile?.name?.trim()) return;
+      state.inviteClaiming = true;
+      if (!send({ type:'claim-invite', invite:state.invite })) state.inviteClaiming = false;
     }
 
     function renderThreads() {
