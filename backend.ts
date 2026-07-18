@@ -146,7 +146,7 @@ export class RelayStore {
   async fetch(request: Request) {
     const url = new URL(request.url);
     if (url.pathname === '/api/health') {
-      return json({ ok: true, service: 'relay', release: 'outcome-v1', storage: 'durable-object', time: new Date().toISOString() });
+      return json({ ok: true, service: 'relay', release: 'outcome-v1.1', storage: 'durable-object', time: new Date().toISOString() });
     }
     if (url.pathname === '/api/profile' && request.method === 'POST') return this.createProfile(request);
     if (url.pathname === '/api/profile/restore' && request.method === 'POST') return this.restoreProfile(request);
@@ -420,16 +420,18 @@ export class RelayStore {
     if (goal.pendingDraft) throw new Error('Review the current draft first.');
     const raw = cleanText(message.text);
     if (!raw) throw new Error('Enter a message.');
-    const tone = TONES.has(message.tone) ? message.tone : goal.tone || 'professional';
+    const tone = goal.tone || 'professional';
     const peerId = goal.participants.find((id: string) => id !== profileId) || null;
     const drafted = await this.makeDraft(profileId, peerId, raw, tone, goal);
     const note = { id: `N${randomHex(12)}`, ownerId: profileId, text: raw, createdAt: Date.now() };
     goal.privateNotes.push(note);
-    goal.pendingDraft = { ownerId: profileId, draft: drafted.draft, noteId: note.id, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: Date.now() };
-    goal.tone = tone;
-    goal.status = 'draft';
+    goal.thread.push({ id: `M${randomHex(16)}`, from: profileId, text: drafted.draft, createdAt: Date.now(), deletedAt: null });
+    this.updateResultFromDraft(goal, drafted);
+    goal.status = goal.participants.length === 1 ? 'waiting' : goal.result.status === 'confirming' ? 'confirming' : 'active';
     goal.updatedAt = Date.now();
+    goal.removedBy = [];
     await this.write(`goal:${goal.id}`, goal);
+    for (const id of goal.participants) await this.addThread(id, goal.id);
     await this.broadcastGoal(goal);
   }
 

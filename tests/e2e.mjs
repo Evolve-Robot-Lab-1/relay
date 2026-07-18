@@ -87,6 +87,8 @@ try {
   assert.ok(created.shareUrl.includes('?invite='));
   assert.equal(created.goal.privateNotes[0].text, 'Meet Friday at 3pm in the main office.');
 
+  owner.send({ type: 'redraft', goalId, tone: 'friendly' });
+  await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft?.tone === 'friendly');
   owner.send({ type: 'approve-outbound', goalId });
   const ownerApproved = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);
   assert.equal(ownerApproved.goal.thread[0].from, profiles[0].profile.id);
@@ -105,9 +107,9 @@ try {
   assert.ok(participant.messages.some(message => message.type === 'bootstrap' && message.contacts.some(contact => contact.id === profiles[0].profile.id)));
 
   participant.send({ type: 'draft-reply', goalId, text: 'That works for me.', tone: 'friendly' });
-  await participant.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.pendingDraft);
-  participant.send({ type: 'approve-outbound', goalId });
   const replied = await owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 2);
+  assert.equal(replied.goal.pendingDraft, null, 'replies should auto-send after the first approval');
+  assert.equal(replied.goal.tone, 'friendly', 'the first approved tone should remain fixed');
   const replyId = replied.goal.thread.find(message => message.from === profiles[1].profile.id).id;
 
   const ownerDeletion = owner.wait(message => message.type === 'goal-updated' && message.goal.id === goalId && message.goal.thread.length === 1);

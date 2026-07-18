@@ -64,9 +64,6 @@ export const HTML = `<!doctype html>
     input,textarea,select{width:100%;border:1px solid var(--line);border-radius:var(--radius);background:#090b0a;color:var(--text);padding:10px 11px;outline:none}
     input:focus,textarea:focus,select:focus{border-color:var(--green2)}
     textarea{min-height:98px;resize:vertical}
-    .segmented{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
-    .segment{height:34px;border:0;border-right:1px solid var(--line);background:#0b0d0c;color:var(--muted);font-size:12px;padding:0 5px}
-    .segment:last-child{border-right:0}.segment.active{background:#173325;color:var(--green)}
     .hint{color:var(--muted);font-size:12px;margin:7px 0 0}
     .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;background:#070908;border:1px solid var(--line);padding:11px;border-radius:var(--radius);color:#b8fbd6}
     .profile-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--green)}
@@ -101,12 +98,13 @@ export const HTML = `<!doctype html>
     .draft-card h3{font-size:11px;text-transform:uppercase;color:var(--green);margin:0 0 8px}
     .draft-text{font-size:14px;overflow-wrap:anywhere}
     .draft-actions{display:flex;gap:7px;margin-top:12px;align-items:center;flex-wrap:wrap}
+    .draft-actions select{width:auto;height:40px}
     .composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;position:sticky;bottom:0;background:var(--bg);padding:10px 0 0}
     .composer textarea{min-height:44px;max-height:120px}
     .composer .primary{height:44px}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.segmented{grid-template-columns:1fr 1fr}.segment:nth-child(2){border-right:0}.segment:nth-child(-n+2){border-bottom:1px solid var(--line)}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{width:92%}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{width:92%}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
   </style>
 </head>
 <body>
@@ -149,9 +147,9 @@ export const HTML = `<!doctype html>
       <div id="message-list" class="messages"></div>
       <section id="draft-card" class="draft-card hidden">
         <h3>Review before sending</h3><div id="draft-text" class="draft-text"></div><div id="draft-facts" class="facts"></div>
-        <div class="draft-actions"><button class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button><select id="draft-tone" aria-label="Draft tone"><option value="professional">Professional</option><option value="friendly">Friendly</option><option value="direct">Direct</option><option value="casual">Casual</option></select><button class="small-btn" type="button" data-action="redraft">Redraft</button></div>
+        <div class="draft-actions"><button class="primary" type="button" data-action="approve-draft">Approve and send</button><button class="secondary" type="button" data-action="reject-draft">Discard</button><select id="draft-tone" aria-label="Conversation tone"><option value="professional">Professional</option><option value="friendly">Friendly</option><option value="direct">Direct</option><option value="casual">Casual</option></select></div>
       </section>
-      <div id="composer" class="composer"><textarea id="reply-input" rows="1" maxlength="4000" placeholder="Write a private instruction..."></textarea><button class="primary" type="button" data-action="draft-reply">Draft</button></div>
+      <div id="composer" class="composer"><textarea id="reply-input" rows="1" maxlength="4000" placeholder="Write a reply..."></textarea><button class="primary" type="button" data-action="draft-reply">Send</button></div>
     </section>
   </main>
 
@@ -160,7 +158,6 @@ export const HTML = `<!doctype html>
     <div class="dialog-body">
       <label for="target-contact">Start with</label><select id="target-contact"><option value="">Secure invite link</option></select>
       <label for="new-message">What conversation do you want help with?</label><textarea id="new-message" maxlength="4000" placeholder="Describe what you want to say or arrange"></textarea>
-      <label>Tone</label><div id="tone-control" class="segmented"><button class="segment active" type="button" data-tone="professional">Professional</button><button class="segment" type="button" data-tone="friendly">Friendly</button><button class="segment" type="button" data-tone="direct">Direct</button><button class="segment" type="button" data-tone="casual">Casual</button></div>
       <p class="hint">Your instruction stays private. Only an approved draft is shared.</p>
     </div>
     <div class="dialog-actions"><button class="secondary" type="button" data-close="create-dialog">Cancel</button><button id="create-button" class="primary" type="button" data-action="create-goal">Generate draft</button></div>
@@ -192,7 +189,7 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), tone: 'professional', tab: 'private', welcomed: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: new URLSearchParams(location.search).get('invite'), tab: 'private', welcomed: false };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting for participant', active:'Active', confirming:'Confirming details', resolved:'Resolved', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const shortId = id => id ? id.slice(0, 7) : '';
@@ -536,12 +533,6 @@ export const HTML = `<!doctype html>
     document.addEventListener('click', event => {
       const close = event.target.closest('[data-close]');
       if (close) return byId(close.dataset.close).close();
-      const tone = event.target.closest('[data-tone]');
-      if (tone) {
-        state.tone = tone.dataset.tone;
-        byId('tone-control').querySelectorAll('[data-tone]').forEach(button => button.classList.toggle('active', button === tone));
-        return;
-      }
       const target = event.target.closest('[data-action]');
       if (!target) return;
       const action = target.dataset.action;
@@ -561,7 +552,7 @@ export const HTML = `<!doctype html>
       if (action === 'create-goal') {
         const message = byId('new-message').value.trim(); if (!message) return toast('Describe the conversation first.');
         target.disabled = true;
-        if (!send({ type:'create-goal', message, tone:state.tone, targetId:byId('target-contact').value || null })) target.disabled = false;
+        if (!send({ type:'create-goal', message, tone:'professional', targetId:byId('target-contact').value || null })) target.disabled = false;
         return;
       }
       if (action === 'open-thread') return send({ type:'open-goal', goalId:target.dataset.goalId });
@@ -572,10 +563,9 @@ export const HTML = `<!doctype html>
       if (action === 'unblock-contact') return send({ type:'unblock-contact', contactId:target.dataset.contactId });
       if (!state.goal) return;
       if (action === 'set-tab') { state.tab = target.dataset.tab; renderConversation(); return; }
-      if (action === 'draft-reply') { const text = byId('reply-input').value.trim(); if (!text) return; byId('reply-input').value = ''; send({ type:'draft-reply', goalId:state.goal.id, text, tone:state.goal.tone }); return; }
+      if (action === 'draft-reply') { const text = byId('reply-input').value.trim(); if (!text) return; byId('reply-input').value = ''; send({ type:'draft-reply', goalId:state.goal.id, text }); return; }
       if (action === 'approve-draft') return send({ type:'approve-outbound', goalId:state.goal.id });
       if (action === 'reject-draft') return send({ type:'reject-outbound', goalId:state.goal.id });
-      if (action === 'redraft') return send({ type:'redraft', goalId:state.goal.id, tone:byId('draft-tone').value });
       if (action === 'delete-message') { if (confirm('Delete this message for both participants?')) send({ type:'delete-message', goalId:state.goal.id, messageId:target.dataset.messageId }); return; }
       if (action === 'remove-conversation') { if (confirm('Remove this conversation from your list?')) send({ type:'remove-conversation', goalId:state.goal.id }); return; }
       if (action === 'delete-everyone') { if (confirm('Permanently delete this conversation for both participants?')) send({ type:'delete-conversation-everyone', goalId:state.goal.id }); return; }
@@ -588,6 +578,7 @@ export const HTML = `<!doctype html>
 
     byId('reply-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('[data-action="draft-reply"]').click(); } });
     byId('new-message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('create-button').click(); } });
+    byId('draft-tone').addEventListener('change', event => { if (state.goal?.pendingDraft) send({ type:'redraft', goalId:state.goal.id, tone:event.target.value }); });
     byId('profile-button').addEventListener('click', () => document.querySelector('[data-action="open-profile"]').click());
     start();
   })();

@@ -33,7 +33,7 @@ A clear result may be an agreement, answer, clarification, rejection, delivered 
 
 - Frictionless profile creation with an optional cross-device recovery code
 - AI-assisted drafting with selectable tone
-- Approval before any private instruction is shared
+- One-time first-message approval with a tone that stays fixed for the conversation
 - Private and shared conversation views
 - Single-use, two-person invite links and permanent contacts
 - Sender-only message deletion synchronized in real time
