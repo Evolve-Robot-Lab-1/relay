@@ -7,8 +7,8 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 - Primary URL: https://relay.durgaai.com
 - Worker URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `7cac22ea-f43b-4665-887d-bceb364c3fc8`
-- Git commit: `8a16d4b` (`fix: require approval before sharing conversations`)
+- Active version: `768d6173-3de4-421f-96b9-0d4f48b236f4`
+- Git commit: `b2b33d3` (`fix: simplify conversation privacy preview`)
 - Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
 - Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
 - Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
@@ -47,6 +47,7 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 - No invite exists before the first message is approved. During approval, Share, Remove, and Delete for all are hidden; approving creates the one-time link and immediately opens Share or copies the urgent invite.
 - Unapproved direct-contact drafts do not appear for the recipient. Discarding an opening draft deletes the empty conversation.
 - Shared messages use stable IDs. Only the sender can delete one, and deletion is pushed to both participants.
+- Conversation uses one default view. Private originals are labeled `Only you can see this`; an optional eye action opens a temporary read-only preview with private text and controls removed.
 - Remove hides a conversation for one profile. Delete for all is creator-only.
 - Contacts are server-authoritative, survive recovery, and support Remove, Block, and Unblock.
 - Legacy self-contact records are removed automatically.
@@ -66,7 +67,8 @@ Both local and production end-to-end suites passed on the active release:
 8. Remove for me and creator delete for everyone.
 9. Focused invite-name popup opening the intended conversation on desktop and mobile.
 10. Approval-before-share, rejected premature rotation, and no pre-approval direct-contact visibility.
-11. Temporary test conversations deleted after verification.
+11. Single conversation view, private labels, read-only shared preview, and preview exit on desktop and mobile.
+12. Temporary test conversations deleted after verification.
 
 The generated browser JavaScript is parsed separately before every dry-run build to prevent template-escaping regressions.
 
@@ -85,9 +87,8 @@ Opening a short link shows the Relay header, a privacy-safe conversation waiting
 
 ## Next Onboarding Priorities
 
-1. Replace the permanent Private / Shared tabs with one Conversation view and an optional `Preview what they see` action.
-2. Hide the `Start with` selector when a profile has no contacts; the only available path is already a secure invite.
-3. Keep recovery setup after the first useful conversation so it does not interrupt creating, approving, sharing, or joining.
+1. Hide the `Start with` selector when a profile has no contacts; the only available path is already a secure invite.
+2. Keep recovery setup after the first useful conversation so it does not interrupt creating, approving, sharing, or joining.
 
 ## Commands
 
