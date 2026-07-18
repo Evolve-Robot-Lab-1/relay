@@ -403,7 +403,7 @@ export const HTML = `<!doctype html>
         state.goal = normalizeGoal(message.goal);
         byId('create-dialog').close();
         byId('create-button').disabled = false;
-        if (message.shareUrl) copyText(inviteShareValue(message.shareUrl), 'Invite copied.');
+        if (message.shareUrl) copyText(message.shareUrl, 'Invite link copied.');
         showConversation();
         return;
       }
@@ -708,10 +708,6 @@ export const HTML = `<!doctype html>
       catch { window.prompt('Copy this value:', value); }
     }
 
-    function inviteShareValue(value) {
-      return 'Your response is needed. Join our private Relay conversation.\\n' + value;
-    }
-
     async function shareInvite(value) {
       const text = 'Your response is needed. Join our private Relay conversation.';
       if (navigator.share) {
@@ -722,7 +718,7 @@ export const HTML = `<!doctype html>
           if (error?.name === 'AbortError') return;
         }
       }
-      return copyText(inviteShareValue(value), 'Invite copied.');
+      return copyText(value, 'Invite link copied.');
     }
 
     function openCreate(contactId = '') {

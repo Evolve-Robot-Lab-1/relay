@@ -266,8 +266,8 @@ try {
 
   await evaluate(`document.querySelector('[data-action="approve-draft"]').click()`);
   await waitFor(`document.querySelectorAll('#message-list .message.mine').length === 1`, 'Approved message did not enter the thread.');
-  await waitFor(`window.__copied.includes('Your response is needed. Join our private Relay conversation.')`, 'Approval did not prepare the urgent invite.');
-  assert.match(await evaluate(`window.__copied`), /\/i\/[A-Za-z0-9_-]{22}/);
+  await waitFor(`/\\/i\\/[A-Za-z0-9_-]{22}$/.test(window.__copied)`, 'Approval did not copy the invite link.');
+  assert.doesNotMatch(await evaluate(`window.__copied`), /response is needed/i, 'Clipboard fallback should contain only the link.');
   assert.equal(await evaluate(`document.querySelector('#conversation-actions').classList.contains('hidden')`), false);
   assert.equal(await evaluate(`document.querySelector('#share-button').classList.contains('hidden')`), false);
   console.log('Browser: first message approved');
