@@ -7,8 +7,8 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 - Primary URL: https://relay.durgaai.com
 - Worker URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `78f5f35f-addd-4fbe-ac61-facc747db883`
-- Git commit: `a8e41eb` (`fix: focus invite onboarding on joining`)
+- Active version: `f00023da-176f-4a74-88f5-dee8b65652fd`
+- Git commit: `dea5d52` (`fix: sharpen invite entry and share urgency`)
 - Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
 - Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
 - Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
@@ -36,7 +36,7 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 - The recovery code restores the same profile, contacts, and conversations on another device.
 - Chrome or Gmail profile sync is not treated as authentication; the recovery code is required across devices.
 - A browser carrying a legacy `aid` can claim that identity once and preserve its old records.
-- A new participant sees a focused Join conversation popup and must save a name before the invite is claimed. Home, Contacts, and new-conversation actions stay hidden during this step.
+- A new participant sees a focused Join conversation popup and must save a name before the invite is claimed. A translucent conversation-shaped waiting state appears behind it without exposing the actual request.
 
 ## Conversation Guarantees
 
@@ -76,9 +76,9 @@ New invite links use `https://relay.durgaai.com/i/<token>`, where the token is a
 - The first successful claim atomically invalidates the link.
 - Rotation and conversation deletion invalidate and remove the active mapping.
 - Simultaneous claims are serialized by conversation, including mixed legacy/new claims.
-- The browser's native Share sheet is used when available; Copy link remains the fallback.
+- Native sharing and copied invites say: `Your response is needed. Join our private Relay conversation.` Copy remains the fallback when native sharing is unavailable.
 
-Opening a short link shows only the Relay header and Join conversation name popup. After the name is saved, Relay claims the invite and opens that conversation directly.
+Opening a short link shows the Relay header, a privacy-safe conversation waiting state, and the Join conversation name popup. After the name is saved, Relay claims the invite and opens that conversation directly.
 
 ## Commands
 
