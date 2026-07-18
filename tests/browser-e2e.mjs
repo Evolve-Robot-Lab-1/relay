@@ -123,7 +123,8 @@ try {
 
   await waitFor(`document.querySelector('#connection')?.textContent === 'Private'`, 'Profile did not connect.');
   console.log('Browser: Relay profile connected');
-  assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'AI representatives for clearer conversations.');
+  assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'Your AI representative for clearer conversations.');
+  await waitFor(`document.querySelector('.brand-logo')?.complete && document.querySelector('.brand-logo')?.naturalWidth === 504`, 'Relay logo did not load.');
   await evaluate(`Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async()=>{} } })`);
   await evaluate(`window.prompt = () => ''`);
   await evaluate(`document.querySelector('[data-action="open-create"]').click()`);

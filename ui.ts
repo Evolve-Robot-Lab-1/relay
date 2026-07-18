@@ -5,7 +5,18 @@ export const HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="AI representatives for clearer conversations.">
+  <meta name="description" content="Your AI representative for clearer conversations.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Relay">
+  <meta property="og:description" content="Your AI representative for clearer conversations.">
+  <meta property="og:image" content="https://relay.durgaai.com/relay-logo.png">
+  <meta property="og:image:width" content="504">
+  <meta property="og:image:height" content="370">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Relay">
+  <meta name="twitter:description" content="Your AI representative for clearer conversations.">
+  <meta name="twitter:image" content="https://relay.durgaai.com/relay-logo.png">
+  <link rel="icon" type="image/png" href="/relay-logo.png">
   <title>Relay</title>
   <style>
     :root{--bg:#080a09;--panel:#101311;--panel2:#171b18;--line:#29302b;--text:#f3f6f4;--muted:#8d9891;--green:#00e982;--green2:#00b969;--red:#ff5a64;--amber:#f2bb49;--blue:#61a8ff;--radius:6px;--max:760px}
@@ -21,6 +32,8 @@ export const HTML = `<!doctype html>
     .connection{font-size:11px;color:var(--muted);margin-left:9px}
     .connection.offline{color:var(--red)}
     .header-left{display:flex;align-items:baseline}
+    .brand-group{display:flex;align-items:center;gap:9px;min-width:0}
+    .brand-logo{width:42px;height:31px;object-fit:contain;flex:0 0 auto}
     .header-copy{min-width:0}
     .tagline{color:var(--muted);font-size:12px;margin-top:1px;overflow-wrap:anywhere}
     .icon-btn{width:36px;height:36px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:var(--radius);display:inline-grid;place-items:center;font-size:18px}
@@ -123,7 +136,7 @@ export const HTML = `<!doctype html>
 <body>
   <main class="shell">
     <header>
-      <div class="header-copy"><div class="header-left"><div class="brand">Re<span>lay</span></div><span id="connection" class="connection">Connecting</span></div><div id="tagline" class="tagline">AI representatives for clearer conversations.</div></div>
+      <div class="brand-group"><img class="brand-logo" src="/relay-logo.png" alt=""><div class="header-copy"><div class="header-left"><div class="brand">Re<span>lay</span></div><span id="connection" class="connection">Connecting</span></div><div id="tagline" class="tagline">Your AI representative for clearer conversations.</div></div></div>
       <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery">&#128100;</button>
     </header>
 
