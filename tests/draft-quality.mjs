@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 
 const base = process.argv[2] || 'http://127.0.0.1:8791';
 const wsBase = base.replace(/^http/, 'ws');
+const CURRENCY_PATTERN = /[\u0024\u20ac\u00a3\u20b9\u00a5\u20a9\u20bd]|\b(?:usd|eur|gbp|inr|jpy|cny|rmb|cad|aud|nzd|chf|dollars?|euros?|british pounds?|pounds? sterling|rupees?|yen|yuan|krw|korean won|rubles?)\b/i;
+const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const AI_PACING_MS = Number(process.env.RELAY_TEST_AI_PACING_MS || 10_000);
+let lastAiRequestAt = 0;
+
+async function paceAi() {
+  const waitMs = Math.max(0, AI_PACING_MS - (Date.now() - lastAiRequestAt));
+  if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+  lastAiRequestAt = Date.now();
+}
 
 async function request(path, options = {}) {
   const response = await fetch(base + path, options);
@@ -82,10 +92,42 @@ function qualityChecks(intent, draft, checks = {}) {
   if (!/^(?:hi|hello|hey)\b/i.test(intent)) assert.doesNotMatch(draft, /^(?:hi|hello|hey)\b/i, 'Draft added a greeting.');
   if (!/\b(interested|happy|glad|excited)\b/i.test(intent)) assert.doesNotMatch(draft, /\b(interested|happy|glad|excited)\b/i, 'Draft invented an emotion or position.');
   if (!/\b(definitely|guarantee|promise|certainly)\b/i.test(intent)) assert.doesNotMatch(draft, /\b(definitely|guarantee|promise|certainly)\b/i, 'Draft strengthened certainty.');
+  if (!/\b(?:thank\w*|appreciat\w*|grateful)\b/i.test(intent)) assert.doesNotMatch(draft, /\b(?:thank\w*|appreciat\w*|grateful)\b/i, 'Draft added gratitude.');
+  if (!CURRENCY_PATTERN.test(intent)) assert.doesNotMatch(draft, CURRENCY_PATTERN, 'Draft invented a currency.');
+  if (CURRENCY_PATTERN.test(intent)) assert.match(draft, CURRENCY_PATTERN, 'Draft omitted the stated currency.');
+  const numbers = intent.match(/\d+(?:[.,]\d+)*/g) || [];
+  for (const number of numbers) {
+    const numeric = Number(number.replace(/,/g, ''));
+    const word = Number.isInteger(numeric) ? SMALL_NUMBER_WORDS[numeric] : '';
+    const isTime = new RegExp(number.replace(/\./g, '\\.') + '\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b', 'i').test(intent);
+    assert.ok(draft.toLowerCase().includes(number.toLowerCase()) || (isTime && word && new RegExp('\\b' + word + '\\b', 'i').test(draft)), 'Draft changed or omitted the number ' + number + '.');
+  }
+  const sourceMeridiems = [...intent.toLowerCase().matchAll(/\d[\d:.]*\s*(a\.?m\.?|p\.?m\.?)/g)].map(match => match[1].replace(/\./g, ''));
+  const normalizedDraft = draft.toLowerCase().replace(/\./g, '');
+  for (const meridiem of sourceMeridiems) {
+    const pattern = meridiem === 'am' ? /\b(?:am|morning)\b/ : /\b(?:pm|afternoon|evening|night)\b/;
+    assert.match(normalizedDraft, pattern, 'Draft changed or omitted ' + meridiem + '.');
+  }
   assert.doesNotMatch(draft, /\b(?:happy|glad|excited) to (?:agree|help|support|proceed)\b/i, 'Draft invented enthusiasm.');
   for (const pattern of checks.include || []) assert.match(draft, pattern, `Missing ${pattern} for: ${intent}`);
   for (const pattern of checks.exclude || []) assert.doesNotMatch(draft, pattern, `Added ${pattern} for: ${intent}`);
-  if (checks.question) assert.match(draft, /\?/, `Expected a question for: ${intent}`);
+  if (checks.question) assert.match(draft, /\?|\b(?:please|could you|can you|would you|will you|let me know)\b/i, `Expected a clear request for: ${intent}`);
+}
+
+function draftSimilarity(first, second) {
+  const left = first.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const right = second.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0];
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const above = previous[column];
+      previous[column] = Math.min(previous[column] + 1, previous[column - 1] + 1, diagonal + (left[row - 1] === right[column - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
 }
 
 const failures = [];
@@ -105,6 +147,13 @@ const openingCases = [
     name: 'borrow request',
     intent: 'i need to ask my friend to lend me 14k and i can repay by Friday',
     include: [/14(?:,?000|k)/i, /Friday/i, /lend|borrow|loan/i],
+    question: true
+  },
+  {
+    name: 'explicit currency',
+    intent: 'ask if they can lend me INR 14,000 and I can repay by Friday',
+    include: [/\bINR\b|\brupees?\b|\u20b9/i, /14,?000/i, /Friday/i, /lend|borrow|loan/i],
+    exclude: [/\b(?:USD|EUR|GBP|dollars?|euros?|pounds?)\b|[\u0024\u20ac\u00a3]/i],
     question: true
   },
   {
@@ -145,14 +194,13 @@ const openingCases = [
   {
     name: 'accept time, reject location',
     intent: 'yes 8pm works for me but I am not willing to meet at my house',
-    include: [/8\s*(?:p\.?m\.?)?/i, /works|available|can meet/i, /not willing|cannot|can\W?t|will not meet at my house|not to meet at my house|different location/i]
+    include: [/(?:8|eight).{0,20}(?:p\.?m\.?|evening|night)/i, /works|available|can meet/i, /not willing|cannot|can\W?t|will not meet at my house|not to meet at my house|different location/i]
   },
   {
     name: 'persuasion becomes a concrete ask',
     intent: 'I want to convince my colleague to test the product for one week before deciding',
     include: [/test|trial|try/i, /product/i, /one week|a week/i, /decid|decis/i],
-    exclude: [/I want to convince|I need to convince|persuade you/i],
-    question: true
+    exclude: [/I want to convince|I need to convince|persuade you/i]
   },
   {
     name: 'criticism with next step',
@@ -162,8 +210,8 @@ const openingCases = [
   }
 ];
 
-const profiles = await Promise.all([createProfile(), createProfile()]);
-const [owner, peer] = profiles.map(profile => new Client(profile));
+const profiles = await Promise.all([createProfile(), createProfile(), createProfile(), createProfile()]);
+const [owner, peer, contextOwner, contextPeer] = profiles.map(profile => new Client(profile));
 
 async function deleteGoal(client, goalId) {
   const deleted = client.wait(message => message.type === 'conversation-deleted' && message.goalId === goalId);
@@ -172,6 +220,7 @@ async function deleteGoal(client, goalId) {
 }
 
 async function createDraft(client, intent, tone = 'professional') {
+  await paceAi();
   client.send({ type: 'create-goal', message: intent, tone });
   const result = await client.wait(message =>
     (message.type === 'goal-created' && message.goal.pendingDraft?.original === intent)
@@ -186,9 +235,11 @@ async function createDraft(client, intent, tone = 'professional') {
 }
 
 try {
-  await Promise.all([owner.connect(), peer.connect()]);
+  await Promise.all([owner.connect(), peer.connect(), contextOwner.connect(), contextPeer.connect()]);
   owner.send({ type: 'set-name', name: 'Quality Owner' });
   peer.send({ type: 'set-name', name: 'Quality Peer' });
+  contextOwner.send({ type: 'set-name', name: 'Context Owner' });
+  contextPeer.send({ type: 'set-name', name: 'Context Peer' });
 
   console.log('\nOPENING DRAFTS');
   for (const test of openingCases) {
@@ -207,6 +258,7 @@ try {
   const toneGoalId = toneCreated.goal.id;
   const toneDrafts = { professional: toneCreated.goal.pendingDraft.draft };
   for (const tone of ['friendly', 'direct', 'casual']) {
+    await paceAi();
     owner.send({ type: 'redraft', goalId: toneGoalId, tone });
     const update = await owner.wait(message =>
       (message.type === 'goal-updated' && message.goal.id === toneGoalId && message.goal.pendingDraft?.tone === tone)
@@ -223,23 +275,36 @@ try {
     console.log(`\n[${tone}] ${draft}`);
     evaluate(`tone ${tone}`, toneIntent, draft, { include: [/Friday/i, /budget/i, /disagree|concern|object|issue|feedback|thought|see (?:it )?differently|feel(?:s)? off|look(?:s)? off|seem(?:s)? (?:wrong|off)/i] });
   }
+  if (toneDrafts.professional) assert.doesNotMatch(toneDrafts.professional, /\b(?:can't|won't|don't|isn't|aren't|I'm|I'd|I'll|we're|we've|you're|you've|they're|they've)\b/i, 'Professional tone should not use contractions.');
+  if (toneDrafts.direct) assert.doesNotMatch(toneDrafts.direct, /\b(?:could you|would you)\b/i, 'Direct tone should not remain indirect.');
+  if (toneDrafts.casual) assert.doesNotMatch(toneDrafts.casual, /\b(?:could you|would you|advise|regarding|whether|sufficient|constitute)\b/i, 'Casual tone should avoid formal wording.');
   if (Object.keys(toneDrafts).length === 4 && new Set(Object.values(toneDrafts).map(value => value.toLowerCase())).size !== 4) {
     failures.push('tone variants: All four tones must produce distinct drafts.');
+  }
+  if (Object.keys(toneDrafts).length === 4) {
+    const entries = Object.entries(toneDrafts);
+    for (let first = 0; first < entries.length; first += 1) {
+      for (let second = first + 1; second < entries.length; second += 1) {
+        if (entries[first][0] === 'direct' || entries[second][0] === 'direct') continue;
+        const similarity = draftSimilarity(entries[first][1], entries[second][1]);
+        if (similarity > 0.82) failures.push(`tone variants: ${entries[first][0]} and ${entries[second][0]} are too similar (${similarity.toFixed(2)}).`);
+      }
+    }
   }
   await deleteGoal(owner, toneGoalId);
 
   console.log('\n\nCONTEXTUAL REPLIES');
-  const seed = await createDraft(owner, 'I need 500 units as soon as possible.');
+  const seed = await createDraft(contextOwner, 'I need 500 units as soon as possible.');
   if (!seed) throw new Error('Cannot evaluate contextual replies without the opening draft.');
-  const inviteReady = owner.wait(message => message.type === 'invite-ready' && message.goalId === seed.goal.id);
-  owner.send({ type: 'approve-outbound', goalId: seed.goal.id });
-  await owner.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length === 1);
+  const inviteReady = contextOwner.wait(message => message.type === 'invite-ready' && message.goalId === seed.goal.id);
+  contextOwner.send({ type: 'approve-outbound', goalId: seed.goal.id });
+  await contextOwner.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length === 1);
   const inviteUrl = new URL((await inviteReady).shareUrl);
   const invite = /^\/i\/([A-Za-z0-9_-]{22})$/.exec(inviteUrl.pathname)?.[1] || inviteUrl.searchParams.get('invite');
-  peer.send({ type: 'claim-invite', invite });
-  await peer.wait(message => message.type === 'invite-claimed' && message.goal.id === seed.goal.id);
-  owner.send({ type: 'toggle-representative', goalId: seed.goal.id });
-  await owner.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.representativeMode === false);
+  contextPeer.send({ type: 'claim-invite', invite });
+  await contextPeer.wait(message => message.type === 'invite-claimed' && message.goal.id === seed.goal.id);
+  contextOwner.send({ type: 'toggle-representative', goalId: seed.goal.id });
+  await contextOwner.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.representativeMode === false);
   const replyCases = [
     { context: 'I need 500 units as soon as possible.', intent: 'reason why?', include: [/why|reason|explain/i, /500|units|urgent|soon/i], exclude: [/\bI (?:need|am in).{0,30}500/i], question: true },
     { context: 'Can you guarantee delivery by Thursday?', intent: 'I cannot guarantee it. I can only estimate Friday.', include: [/cannot|can\W?t|unable/i, /guarantee/i, /Thursday/i, /Friday/i], exclude: [/^I guarantee|will deliver/i] },
@@ -247,12 +312,13 @@ try {
     { context: 'Would Monday or Tuesday work better for delivery?', intent: 'Tuesday is better for me', include: [/Tuesday/i], exclude: [/Monday is better for me|discuss.{0,20}Tuesday/i] }
   ];
   for (const test of replyCases) {
-    const contextBefore = peer.messages.filter(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id).at(-1)?.goal.thread.length || 1;
-    owner.send({ type: 'draft-reply', goalId: seed.goal.id, text: test.context });
-    const contextUpdate = await peer.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length > contextBefore);
+    const contextBefore = contextPeer.messages.filter(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id).at(-1)?.goal.thread.length || 1;
+    contextOwner.send({ type: 'draft-reply', goalId: seed.goal.id, text: test.context });
+    const contextUpdate = await contextPeer.wait(message => message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length > contextBefore);
     const before = contextUpdate.goal.thread.length;
-    peer.send({ type: 'draft-reply', goalId: seed.goal.id, text: test.intent });
-    const update = await peer.wait(message =>
+    await paceAi();
+    contextPeer.send({ type: 'draft-reply', goalId: seed.goal.id, text: test.intent });
+    const update = await contextPeer.wait(message =>
       (message.type === 'goal-updated' && message.goal.id === seed.goal.id && message.goal.thread.length > before)
       || (message.type === 'error' && message.action === 'draft-reply')
     );
@@ -265,7 +331,7 @@ try {
     console.log(`\nIntent: ${test.intent}\nDraft:  ${draft}`);
     evaluate(`reply ${test.intent}`, test.intent, draft, test);
   }
-  await deleteGoal(owner, seed.goal.id);
+  await deleteGoal(contextOwner, seed.goal.id);
 
   if (failures.length) {
     console.error(`\nDraft quality evaluation failed (${failures.length}):`);
@@ -275,7 +341,7 @@ try {
     console.log('\nDraft quality evaluation passed.');
   }
 } finally {
-  await Promise.all([owner.close(), peer.close()]);
+  await Promise.all([owner.close(), peer.close(), contextOwner.close(), contextPeer.close()]);
 }
 
 process.exit(process.exitCode || 0);

@@ -9,12 +9,29 @@ const DELETED_VALUE = '__relay_deleted_v1__';
 const PROFILE_PREFIX = 'RLY1';
 const TONES = new Set(['professional', 'friendly', 'direct', 'casual']);
 const TONE_GUIDANCE: Record<string, string> = {
-  professional: 'Use polished, respectful language, complete sentences, and no slang.',
-  friendly: 'Sound warm and approachable. Use natural contractions and gentle wording without becoming overly enthusiastic.',
-  direct: 'Lead with the request, answer, or boundary. Remove unnecessary softeners and keep the wording concise.',
-  casual: 'Use relaxed, everyday conversational language and contractions. Avoid formal or corporate phrasing.'
+  professional: 'Use polished, neutral language, complete sentences, and no slang or contractions. Prefer precise wording such as "please" and "let me know whether" when appropriate.',
+  friendly: 'Sound warm, collaborative, and approachable without inventing enthusiasm. Prefer gentle wording such as "could you take a look" or "share any concerns" when appropriate.',
+  direct: 'Lead with the request, answer, or boundary. Prefer short declarative or imperative sentences. Avoid indirect phrases such as "could you," "would you," and "let me know" when a direct equivalent preserves the meaning.',
+  casual: 'Use relaxed, everyday language and contractions. Prefer ordinary wording such as "can you check" or "anything looks off" and avoid formal or corporate phrasing.'
 };
 const FACT_KEYS = ['date', 'time', 'location'];
+const CURRENCY_KINDS: Array<[string, RegExp]> = [
+  ['usd', /[\u0024]|\b(?:usd|us dollars?)\b/i],
+  ['eur', /[\u20ac]|\b(?:eur|euros?)\b/i],
+  ['gbp', /[\u00a3]|\b(?:gbp|british pounds?|pounds? sterling)\b/i],
+  ['inr', /[\u20b9]|\b(?:inr|rupees?)\b/i],
+  ['jpy', /\b(?:jpy|yen)\b/i],
+  ['cny', /\b(?:cny|rmb|yuan)\b/i],
+  ['cad', /\b(?:cad|canadian dollars?)\b/i],
+  ['aud', /\b(?:aud|australian dollars?)\b/i],
+  ['nzd', /\b(?:nzd|new zealand dollars?)\b/i],
+  ['chf', /\bchf\b/i],
+  ['krw', /[\u20a9]|\b(?:krw|korean won)\b/i],
+  ['rub', /[\u20bd]|\b(?:rub|rubles?)\b/i],
+  ['dollar', /\bdollars?\b/i],
+  ['yen-yuan', /[\u00a5]/i]
+];
+const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
@@ -89,6 +106,25 @@ function draftPayload(value: string) {
   return { draft: plain };
 }
 
+function currencyKinds(value: string) {
+  return new Set(CURRENCY_KINDS.filter(([, pattern]) => pattern.test(value)).map(([kind]) => kind));
+}
+
+function preservesNumber(source: string, output: string, number: string) {
+  if (output.includes(number)) return true;
+  const numeric = Number(number.replace(/,/g, ''));
+  const word = Number.isInteger(numeric) ? SMALL_NUMBER_WORDS[numeric] : '';
+  if (!word || !new RegExp('\\b' + word + '\\b').test(output)) return false;
+  return new RegExp(number.replace(/\./g, '\\.') + '\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b').test(source);
+}
+
+function preservesMeridiem(output: string, meridiem: string) {
+  const normalized = output.replace(/\./g, '');
+  return meridiem === 'am'
+    ? /\b(?:am|morning)\b/.test(normalized)
+    : /\b(?:pm|afternoon|evening|night)\b/.test(normalized);
+}
+
 function modelResultText(result: any) {
   const structuredResponse = result?.response && typeof result.response === 'object' ? JSON.stringify(result.response) : '';
   const direct = cleanText(result, 10_000) || cleanText(result?.response, 10_000) || cleanText(structuredResponse, 10_000) || cleanText(result?.output_text, 10_000);
@@ -119,11 +155,18 @@ function draftViolation(raw: string, draft: string) {
   if (/\[[^\]]{1,50}\]/.test(draft)) return 'The draft contains a placeholder.';
   if (/(?:^|\s)(?::|;|=)(?:-)?(?:\)|\(|d|p)(?:\s|$)/i.test(draft)) return 'The draft contains an emoticon.';
   if (!/^(?:hi|hello|hey)\b/i.test(raw) && /^(?:hi|hello|hey)\b/i.test(draft)) return 'The draft added a greeting.';
-  if (!/\b(thank|appreciat|grateful)\b/.test(source) && /\b(thank|appreciat|grateful)\b/.test(output)) return 'The draft added gratitude.';
+  if (!/\b(?:thank\w*|appreciat\w*|grateful)\b/.test(source) && /\b(?:thank\w*|appreciat\w*|grateful)\b/.test(output)) return 'The draft added gratitude.';
   if (!/\b(interested|happy|glad|excited)\b/.test(source) && /\b(interested|happy|glad|excited)\b/.test(output)) return 'The draft added an emotion or position.';
   if (!/\b(definitely|guarantee|promise|certainly)\b/.test(source) && /\b(definitely|guarantee|promise|certainly)\b/.test(output)) return 'The draft strengthened certainty or added a promise.';
-  const numbers = source.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
-  if (!numbers.every(number => output.includes(number))) return 'The draft changed or omitted a number.';
+  const sourceCurrencies = currencyKinds(raw);
+  const outputCurrencies = currencyKinds(draft);
+  if (!sourceCurrencies.size && outputCurrencies.size) return 'The draft invented a currency.';
+  if (sourceCurrencies.size && !outputCurrencies.size) return 'The draft omitted the stated currency.';
+  if ([...outputCurrencies].some(currency => !sourceCurrencies.has(currency))) return 'The draft changed the stated currency.';
+  const numbers = source.match(/\d+(?:[.,]\d+)*/g) || [];
+  if (!numbers.every(number => preservesNumber(source, output, number))) return 'The draft changed or omitted a number.';
+  const sourceMeridiems = [...source.matchAll(/\d[\d:.]*\s*(a\.?m\.?|p\.?m\.?)/g)].map(match => match[1].replace(/\./g, ''));
+  if (!sourceMeridiems.every(value => preservesMeridiem(output, value))) return 'The draft changed or omitted am/pm.';
   const namedDates = source.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || [];
   if (!namedDates.every(value => new RegExp(`\\b${value}\\b`).test(output))) return 'The draft changed or omitted a named date.';
   if (/\b(cancel|withdraw)\b/.test(source) && !/\b(cancel|withdraw)\b/.test(output)) return 'The draft omitted the cancellation.';
@@ -131,10 +174,119 @@ function draftViolation(raw: string, draft: string) {
   if (/\b(cannot|can't|can’t|will not|won't|not willing|unable)\b/.test(source) && !/\b(cannot|can't|can’t|will not|won't|not willing|unable|not available)\b/.test(output)) return 'The draft weakened or omitted a firm limit.';
   if (/(not comfortable|rather not|do not want|don't want).{0,40}(shar|disclos|tell|provide|discuss|give)/.test(source) && !/(not comfortable|rather not|prefer not|do not want|don't want|do not wish|don't wish|won't|will not|cannot|can't|can’t|decline).{0,60}(shar|disclos|tell|provide|discuss|give|detail|information|reason)|keep.{0,20}private/.test(output)) return 'The draft omitted the privacy boundary.';
   if (/\b(why|reason)\b/.test(source) && !/\b(why|reason|explain|clarif)/.test(output)) return 'The draft omitted the request for a reason.';
+  if (/\bdisagree(?:ment|s|d|ing)?\b/.test(source) && !/\b(?:disagree(?:ment|s|d|ing)?|concerns?|objections?|issues?|feedback|reservations?|hesitations?|misgivings?|push\s*back|not agree|different (?:view|perspective)|see (?:it )?differently|feel(?:s)? off|look(?:s)? off|seem(?:s)? (?:wrong|off)|not on board)\b/.test(output)) return 'The draft changed or omitted the request for disagreement.';
   const asksOtherPerson = /\bask\b/.test(source) || /\brequest\s+(?:that|them|him|her|the other person)\b/.test(source);
-  if (asksOtherPerson && !/[?]/.test(draft) && !/\b(?:please|could you|can you|would you|let me know)\b/.test(output)) return 'The draft did not make the requested ask.';
+  if (asksOtherPerson && !/[?]/.test(draft) && !/\b(?:please|could you|can you|would you|let me know|tell me|share)\b/.test(output)) return 'The draft did not make the requested ask.';
   if (/\b(?:convince|persuade)\b/.test(source) && !/[?]/.test(draft) && !/\b(?:please|could you|can you|would you|will you|are you willing|how about|let's|let us)\b/.test(output)) return 'The draft narrated persuasion instead of making a concrete proposal.';
   return '';
+}
+
+function draftSimilarity(first: string, second: string) {
+  const left = first.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const right = second.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!left || !right) return 0;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0];
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const above = previous[column];
+      previous[column] = Math.min(
+        previous[column] + 1,
+        previous[column - 1] + 1,
+        diagonal + (left[row - 1] === right[column - 1] ? 0 : 1)
+      );
+      diagonal = above;
+    }
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+}
+
+function toneViolation(tone: string, draft: string) {
+  if (tone === 'professional' && /\b(?:can't|won't|don't|isn't|aren't|I'm|I'd|I'll|we're|we've|you're|you've|they're|they've)\b/i.test(draft)) {
+    return 'Professional tone used a contraction.';
+  }
+  if (tone === 'direct' && /\b(?:could you|would you)\b/i.test(draft)) {
+    return 'Direct tone remained indirect instead of stating the request concisely.';
+  }
+  if (tone === 'casual' && /\b(?:could you|would you|advise|regarding|whether|sufficient|constitute)\b/i.test(draft)) {
+    return 'Casual tone used formal or corporate wording.';
+  }
+  return '';
+}
+
+function lowerInitial(value: string) {
+  return value ? value[0].toLocaleLowerCase() + value.slice(1) : value;
+}
+
+function upperInitial(value: string) {
+  return value ? value[0].toLocaleUpperCase() + value.slice(1) : value;
+}
+
+function conservativeToneFallback(previous: string, tone: string) {
+  let draft = cleanText(previous);
+  if (!draft) return '';
+  if (tone === 'professional') {
+    draft = draft
+      .replace(/\bcan't\b/gi, 'cannot')
+      .replace(/\bwon't\b/gi, 'will not')
+      .replace(/\bdon't\b/gi, 'do not')
+      .replace(/\bisn't\b/gi, 'is not')
+      .replace(/\baren't\b/gi, 'are not')
+      .replace(/\bI'm\b/gi, 'I am')
+      .replace(/\bI'd like\b/gi, 'I would like')
+      .replace(/\bI'll\b/gi, 'I will')
+      .replace(/\bwe're\b/gi, 'we are')
+      .replace(/\bwe've\b/gi, 'we have')
+      .replace(/\byou're\b/gi, 'you are')
+      .replace(/\byou've\b/gi, 'you have')
+      .replace(/\bthey're\b/gi, 'they are')
+      .replace(/\bthey've\b/gi, 'they have');
+    if (/^Can you\s+/i.test(draft)) draft = draft.replace(/^Can you\s+/i, 'Could you please ');
+  } else if (tone === 'friendly') {
+    if (/^Please\s+/i.test(draft)) {
+      draft = 'Could you ' + lowerInitial(draft.replace(/^Please\s+/i, ''));
+    } else if (/^Can you\s+/i.test(draft)) {
+      draft = draft.replace(/^Can you\s+/i, 'Could you ');
+    }
+    draft = draft.replace(/\breview\b/i, 'take a look at');
+    draft = draft.replace(/\bif you disagree\b/i, 'if you have any concerns');
+    draft = draft
+      .replace(/\bI am\b/i, "I'm")
+      .replace(/\bcannot\b/i, "can't")
+      .replace(/\bwill not\b/i, "won't")
+      .replace(/\bdo not\b/i, "don't");
+  } else if (tone === 'direct') {
+    if (/^(?:Could|Can) you(?: please)?\s+/i.test(draft)) {
+      draft = upperInitial(draft.replace(/^(?:Could|Can) you(?: please)?\s+/i, ''));
+    } else if (/^Please\s+/i.test(draft)) {
+      draft = upperInitial(draft.replace(/^Please\s+/i, ''));
+    }
+    draft = draft.replace(/\btake a look at\b/i, 'review');
+    draft = draft.replace(/\s+and let me know\b/i, '. Tell me');
+    draft = draft.replace(/\bLet me know\b/i, 'Tell me');
+  } else if (tone === 'casual') {
+    if (/^Could you(?: please)?\s+/i.test(draft)) {
+      draft = draft.replace(/^Could you(?: please)?\s+/i, 'Can you ');
+    } else if (/^Please\s+/i.test(draft)) {
+      draft = 'Can you ' + lowerInitial(draft.replace(/^Please\s+/i, ''));
+    } else if (/^(?:Review|Check|Tell|Send|Share|Confirm|Explain|Choose|Suggest)\b/.test(draft)) {
+      draft = 'Can you ' + lowerInitial(draft);
+    }
+    draft = draft.replace(/\breview\b/i, 'check');
+    draft = draft.replace(/\bif you disagree\b/i, 'if anything looks off');
+    draft = draft
+      .replace(/\bPlease confirm\.?$/i, 'Can you confirm?')
+      .replace(/\bPlease let me know\b/i, 'Can you let me know')
+      .replace(/\bI would like to\b/i, "I'd like to")
+      .replace(/\bcannot\b/i, "can't")
+      .replace(/\bwill not\b/i, "won't")
+      .replace(/\bdo not\b/i, "don't")
+      .replace(/\. See you then\.$/i, ', see you then.')
+      .replace(/\bTell me\b/i, 'Let me know')
+      .replace(/\bfits your schedule\b/i, 'works for you');
+  }
+  return cleanText(draft.replace(/\s{2,}/g, ' '));
 }
 
 function cleanName(value: unknown) {
@@ -1035,7 +1187,7 @@ export class RelayStore {
 Priority order:
 1. Correct speaker ownership.
 2. Preserve the User's intent and meaning.
-3. Preserve every fact, amount, date, condition, question, rejection, certainty level, and boundary.
+3. Preserve every fact, amount, currency, date, condition, question, rejection, certainty level, and boundary.
 4. Apply the selected tone.
 5. Keep the message concise and natural.
 
@@ -1045,7 +1197,11 @@ If the private text says "convince" or "persuade," turn the underlying idea into
 
 Default to 1-2 short sentences and one clear result. Use at most 3 sentences and 80 words. Start with the substance. Do not add a greeting, recipient-name placeholder, sign-off, gratitude, apology, backstory, emotion, enthusiasm, emoji, or generic social filler unless the private text asks for it. Do not make the message more certain, more agreeable, more urgent, more personal, or more confrontational than the User intended.
 
+Never guess or add a currency symbol, currency code, or currency name. If the private text says only "14k," keep it currency-neutral. If it states a currency, preserve that currency. Keep digits as digits and preserve time qualifiers such as am and pm.
+
 The private instruction is authoritative. Conversation history is context only. Never copy the Other person's first-person claims into the User's voice. Never answer on behalf of the Other person. Never invent reasons, facts, promises, commitments, consent, agreement, interest, or enthusiasm. Do not expose or mention the private instruction. Do not add advice, analysis, labels, or negotiation strategy.
+
+Preserve polarity. A request to identify disagreement, objections, or concerns must not become a request to confirm agreement or ask whether the Other person is "on board."
 
 For a short reply fragment, use the latest message to resolve references. Example: Other person says "I'm in a tight spot and need 500 units ASAP" and the User says "reason why?" The draft should ask why the Other person needs 500 units urgently; it must not say the User is in a tight spot.
 
@@ -1058,23 +1214,35 @@ Examples of the desired transformation:
 - Private: "yes 8pm but not at my house" Draft: "8 pm works for me, but I am not willing to meet at my house. Can we choose another location?"
 - Private: "convince colleague to test the product for a week" Draft: "Would you be willing to test the product for one week before deciding?"
 
-Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
+Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When restyling an approval-card draft, make the selected tone clearly visible through diction and sentence structure, not by changing only one modal verb or deleting a word.`;
     const previous = cleanText(previousDraft);
     const modelCount = this.rewriteModelCount();
     const modelPlan = [0, 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1), 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1)];
     let lastViolation = '';
-    let styleFallback = '';
+    const unavailableModels = new Set<number>();
     for (let attempt = 0; attempt < modelPlan.length; attempt += 1) {
-      if (attempt === 2 && styleFallback) break;
+      const modelIndex = modelPlan[attempt];
+      if (unavailableModels.has(modelIndex)) continue;
       try {
+        const correction = lastViolation.includes('disagreement')
+          ? 'Use explicit wording such as "disagree," "concern," "objection," or "issue"; do not ask whether they agree. '
+          : lastViolation.includes('requested ask')
+            ? 'Write the request itself using a question or a clear phrase such as "please," "can you," or "would you." '
+            : lastViolation.includes('currency')
+              ? 'Use only the currency stated in the private text; if none is stated, keep the amount currency-neutral. '
+              : lastViolation.includes('am/pm') || lastViolation.includes('number')
+                ? 'Copy every digit and any am/pm qualifier exactly from the private text. '
+                : lastViolation.includes('tone') || lastViolation.includes('similar')
+                  ? 'Change the diction and sentence structure while preserving every fact and intent. '
+                  : '';
         const retryRule = attempt
-          ? `\nA prior candidate was rejected${lastViolation ? ` because: ${lastViolation}` : ''}. Correct that problem. ${previous ? 'Use clearly different wording from the previous approved-card draft. ' : ''}Return JSON only.`
+          ? `\nA prior candidate was rejected${lastViolation ? ` because: ${lastViolation}` : ''}. Correct that problem. ${correction}${previous ? 'Use clearly different wording from the previous approved-card draft. ' : ''}Return JSON only.`
           : '';
         const messages = [
           { role: 'system', content: prompt },
           { role: 'user', content: `Message type: ${messageKind}\nRecipient: ${peerId || 'not joined'}\nOther person's latest message:\n${latestOtherMessage}\n\nConversation context (reference only):\n${history}\n\nUser's private intent for this outgoing message:\n${raw}${previous ? `\n\nPrevious draft to restyle:\n${previous}` : ''}${retryRule}` }
         ];
-        let response = cleanText(await this.runRewriteModel(messages, modelPlan[attempt]), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let response = cleanText(await this.runRewriteModel(messages, modelIndex), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         const start = response.indexOf('{');
         const end = response.lastIndexOf('}');
         if (start >= 0 && end > start) response = response.slice(start, end + 1);
@@ -1090,8 +1258,11 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
           continue;
         }
         lastViolation = draftViolation(raw, draft);
+        if (!lastViolation) lastViolation = toneViolation(tone, draft);
+        if (!lastViolation && tone !== 'direct' && previous && draft.length >= 24 && draftSimilarity(previous, draft) > 0.82) {
+          lastViolation = 'The new draft is too similar to the previous draft for a visible tone change.';
+        }
         if (lastViolation) {
-          if (/longer than 80 words|contains an emoticon|added a greeting|added gratitude/.test(lastViolation) && !styleFallback) styleFallback = draft;
           console.warn('Relay AI draft rejected:', lastViolation);
           continue;
         }
@@ -1107,12 +1278,15 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
         console.warn('Relay AI rewrite attempt failed:', lastViolation);
         const retryAfterMs = Number(error?.retryAfterMs || 0);
         if (retryAfterMs > 0 && retryAfterMs <= 10_000) await new Promise(resolve => setTimeout(resolve, retryAfterMs));
+        else if (retryAfterMs > 10_000) unavailableModels.add(modelIndex);
+        else if (/daily free allocation|daily quota|quota exhausted|used up/i.test(lastViolation)) unavailableModels.add(modelIndex);
       }
     }
-    if (styleFallback) {
+    const fallback = conservativeToneFallback(previous, tone);
+    if (fallback && fallback.toLocaleLowerCase() !== previous.toLocaleLowerCase() && !draftViolation(raw, fallback) && !toneViolation(tone, fallback)) {
       return {
-        draft: styleFallback,
-        resultSummary: cleanText(styleFallback, 500),
+        draft: fallback,
+        resultSummary: cleanText(fallback, 500),
         resultType: 'progress',
         requiresConfirmation: false,
         facts: { date: null, time: null, location: null }
@@ -1129,28 +1303,30 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning.`;
     const groqCount = this.env.GROQ_API_KEY ? GROQ_AI_MODELS.length : 0;
     if (modelIndex < groqCount) {
       const model = GROQ_AI_MODELS[modelIndex];
+      const body: any = {
+        model,
+        messages,
+        temperature: 0.2,
+        max_completion_tokens: 240,
+        reasoning_effort: 'low'
+      };
+      if (model !== 'openai/gpt-oss-20b') body.response_format = { type: 'json_object' };
       const response = await fetch(GROQ_CHAT_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${this.env.GROQ_API_KEY}`,
           'content-type': 'application/json'
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: 0.2,
-          max_completion_tokens: 240,
-          reasoning_effort: 'low',
-          response_format: { type: 'json_object' }
-        })
+        body: JSON.stringify(body)
       });
       const data: any = await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = cleanText(data?.error?.message, 600) || `Groq returned HTTP ${response.status}.`;
-        const retryMatch = /try again in\s+([\d.]+)\s*(ms|s)/i.exec(detail);
+        const retryMatch = /try again in\s+([\d.]+)\s*(ms|s|m)(?:\s*([\d.]+)\s*s)?/i.exec(detail);
         const headerSeconds = Number(response.headers.get('retry-after') || 0);
         const retryAfterMs = retryMatch
-          ? Number(retryMatch[1]) * (retryMatch[2].toLowerCase() === 'ms' ? 1 : 1000)
+          ? Number(retryMatch[1]) * (retryMatch[2].toLowerCase() === 'ms' ? 1 : retryMatch[2].toLowerCase() === 'm' ? 60_000 : 1000)
+            + Number(retryMatch[3] || 0) * 1000
           : headerSeconds * 1000;
         const error: any = new Error(`${model}: ${cleanText(detail, 240)}`);
         if (response.status === 429 && retryAfterMs > 0) error.retryAfterMs = Math.ceil(retryAfterMs + 150);

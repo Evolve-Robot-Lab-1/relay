@@ -1,6 +1,6 @@
 # Relay Session Save
 
-Last updated: 2026-07-18 (Asia/Kolkata)
+Last updated: 2026-07-19 (Asia/Kolkata)
 
 ## Production
 
@@ -12,6 +12,14 @@ Last updated: 2026-07-18 (Asia/Kolkata)
 - Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
 - Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
 - Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
+
+### Pending Drafting Release
+
+- The 2026-07-19 drafting candidate is locally verified but is not active in production yet.
+- Deployment was blocked before upload because the saved Cloudflare API token is invalid and the machine login requires renewed interactive authorization.
+- The candidate preserves unstated currencies, explicit currency kinds, attached-unit numbers such as `14k`, time qualifiers, disagreement polarity, boundaries, and cancellation intent.
+- Professional, Friendly, Direct, and Casual now have distinct guidance and validation. Tone-only retries can use a conservative, meaning-checked restyle of the last approved draft when providers are temporarily unavailable.
+- Groq remains primary (`openai/gpt-oss-120b`, then `openai/gpt-oss-20b`), with Workers AI as fallback. Provider quota exhaustion is detected so unavailable models are skipped during a request.
 
 ## Product Rule
 
@@ -71,6 +79,15 @@ Both local and production end-to-end suites passed on the active release:
 12. Temporary test conversations deleted after verification.
 
 The generated browser JavaScript is parsed separately before every dry-run build to prevent template-escaping regressions.
+
+The pending 2026-07-19 drafting candidate also passed:
+
+1. The strict draft-quality suite for intent, speaker attribution, polarity, boundaries, cancellation, numbers, time, and currency preservation.
+2. Clearly distinct Professional, Friendly, Direct, and Casual drafts without changing meaning.
+3. A final local end-to-end run covering recovery, all four tones, invites, privacy, contacts, blocking, deletion, results, Representative modes, and conversation removal.
+4. `npm run check`, including generated-client syntax validation and a Wrangler dry-run build.
+
+Repeated AI stress runs exhausted Cloudflare's free daily Workers AI allocation and temporarily reached Groq rolling limits. The application fails closed instead of sending private text when every provider is unavailable. A further REST model can be added later as an independent capacity fallback once its endpoint, model, authentication, limits, and data-retention terms are known.
 
 ## Short Invite Links
 

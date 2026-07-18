@@ -110,7 +110,8 @@ try {
 
   const assertMeaningPreserved = draft => {
     assert.match(draft, /Friday/i, 'tone rewrite must preserve the date');
-    assert.match(draft, /3(?::00)?\s*(?:p\.?m\.?)?/i, 'tone rewrite must preserve the time');
+    assert.match(draft, /\b(?:3|three)\b/i, 'tone rewrite must preserve the time');
+    assert.match(draft, /\b(?:p\.?m\.?|afternoon|evening)\b/i, 'tone rewrite must preserve the time period');
     assert.match(draft, /main office/i, 'tone rewrite must preserve the location');
   };
   const professionalDraft = created.goal.pendingDraft.draft;
