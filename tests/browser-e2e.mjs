@@ -33,6 +33,74 @@ chrome.stderr.on('data', chunk => { chromeError = (chromeError + chunk).slice(-4
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+class RelayClient {
+  constructor(profile) {
+    this.profile = profile;
+    this.waiters = [];
+    this.socket = new WebSocket(base.replace(/^http/, 'ws') + '/ws');
+    this.socket.addEventListener('message', event => {
+      const message = JSON.parse(event.data);
+      for (const waiter of [...this.waiters]) {
+        if (!waiter.predicate(message)) continue;
+        clearTimeout(waiter.timer);
+        this.waiters.splice(this.waiters.indexOf(waiter), 1);
+        waiter.resolve(message);
+      }
+    });
+  }
+
+  async connect() {
+    await new Promise((resolve, reject) => {
+      this.socket.addEventListener('open', resolve, { once: true });
+      this.socket.addEventListener('error', reject, { once: true });
+    });
+    const welcomed = this.wait(message => message.type === 'welcome');
+    this.send({ type: 'init', recoveryCode: this.profile.recoveryCode });
+    await welcomed;
+  }
+
+  send(message) {
+    this.socket.send(JSON.stringify(message));
+  }
+
+  wait(predicate, timeoutMs = 45_000) {
+    return new Promise((resolve, reject) => {
+      const waiter = { predicate, resolve, timer: null };
+      waiter.timer = setTimeout(() => {
+        this.waiters.splice(this.waiters.indexOf(waiter), 1);
+        reject(new Error('Timed out waiting for the invite owner.'));
+      }, timeoutMs);
+      this.waiters.push(waiter);
+    });
+  }
+
+  close() {
+    this.socket.close();
+  }
+}
+
+async function createInviteOwner() {
+  const response = await fetch(base + '/api/profile', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}'
+  });
+  assert.equal(response.status, 201);
+  const profile = await response.json();
+  const client = new RelayClient(profile);
+  await client.connect();
+  const named = client.wait(message => message.type === 'bootstrap' && message.profile.name === 'Invite Owner');
+  client.send({ type: 'set-name', name: 'Invite Owner' });
+  await named;
+  const creating = client.wait(message => message.type === 'goal-created');
+  client.send({ type: 'create-goal', message: 'Can we discuss the project timeline?', tone: 'professional' });
+  const created = await creating;
+  const approved = client.wait(message => message.type === 'goal-updated' && message.goal.id === created.goal.id && message.goal.thread.length === 1);
+  client.send({ type: 'approve-outbound', goalId: created.goal.id });
+  await approved;
+  return { client, goalId: created.goal.id, shareUrl: created.shareUrl };
+}
+
 async function devtoolsAddress() {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
@@ -94,6 +162,7 @@ class Cdp {
 }
 
 let cdp;
+let inviteOwner;
 try {
   cdp = new Cdp(await devtoolsAddress());
   await cdp.connect();
@@ -104,8 +173,9 @@ try {
   await cdp.send('Runtime.enable', {}, sessionId);
   await cdp.send('Page.enable', {}, sessionId);
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-  const unavailableInvite = 'AAAAAAAAAAAAAAAAAAAAAA';
-  await cdp.send('Page.navigate', { url: base + '/i/' + unavailableInvite }, sessionId);
+  inviteOwner = await createInviteOwner();
+  const invitePath = new URL(inviteOwner.shareUrl).pathname;
+  await cdp.send('Page.navigate', { url: base + invitePath }, sessionId);
 
   async function evaluate(expression) {
     const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
@@ -124,21 +194,31 @@ try {
 
   await waitFor(`document.querySelector('#connection')?.textContent === 'Connected'`, 'Profile did not connect.');
   console.log('Browser: Relay profile connected');
-  assert.equal(await evaluate(`document.querySelector('#name-banner').classList.contains('hidden')`), false, 'A new profile must see the display-name banner.');
-  assert.equal(await evaluate(`document.querySelector('#name-banner-title').textContent`), 'Choose a name to join');
+  assert.equal(await evaluate(`document.querySelector('#name-banner').classList.contains('hidden')`), true, 'The generic name banner must not compete with an invite.');
+  assert.equal(await evaluate(`document.querySelector('#invite-name-dialog').open`), true, 'An invite should open the focused name popup.');
+  assert.equal(await evaluate(`document.querySelector('#invite-name-title').textContent`), 'Join conversation');
+  assert.equal(await evaluate(`document.querySelector('#home-view').hidden`), true, 'The home actions must stay hidden while joining an invite.');
+  assert.equal(await evaluate(`document.querySelector('#join-conversation-button').textContent`), 'Join conversation');
   await delay(500);
   assert.equal((await evaluate(`document.querySelector('#toast').textContent`)).includes('Invite unavailable'), false, 'An unnamed profile must not claim the invite.');
-  assert.equal(await evaluate(`location.pathname`), '/i/' + unavailableInvite, 'The pending invite path should remain until a name is saved.');
+  assert.equal(await evaluate(`location.pathname`), invitePath, 'The pending invite path should remain until a name is saved.');
   const onboardingScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-onboarding.png', Buffer.from(onboardingScreenshot.data, 'base64'));
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
   const mobileOnboardingScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-onboarding-mobile.png', Buffer.from(mobileOnboardingScreenshot.data, 'base64'));
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-  await evaluate(`document.querySelector('#onboarding-name').value = 'Browser Test'; document.querySelector('#save-onboarding-name').click()`);
-  await waitFor(`document.querySelector('#name-banner').classList.contains('hidden')`, 'Display name did not save or the banner did not close.');
+  await evaluate(`document.querySelector('#invite-name').value = 'Browser Test'; document.querySelector('#join-conversation-button').click()`);
+  await waitFor(`!document.querySelector('#invite-name-dialog').open`, 'The invite name popup did not complete.');
   await waitFor(`location.pathname === '/' && location.search === ''`, 'The invite was not attempted after the name was saved.');
-  console.log('Browser: display name saved');
+  await waitFor(`!document.querySelector('#conversation-view').hidden && document.querySelectorAll('#message-list .message:not(.mine)').length === 1`, 'The invite did not open its conversation.');
+  assert.equal(await evaluate(`document.querySelector('#conversation-peer').textContent`), 'Invite Owner');
+  console.log('Browser: invite name saved and conversation joined');
+  await evaluate(`window.confirm = () => true; document.querySelector('[data-action="remove-conversation"]').click()`);
+  await waitFor(`!document.querySelector('#home-view').hidden && document.querySelectorAll('#thread-list .conversation-row').length === 0`, 'The temporary joined conversation was not removed.');
+  const ownerDeleted = inviteOwner.client.wait(message => message.type === 'conversation-deleted' && message.goalId === inviteOwner.goalId);
+  inviteOwner.client.send({ type: 'delete-conversation-everyone', goalId: inviteOwner.goalId });
+  await ownerDeleted;
   assert.equal(await evaluate(`document.querySelector('.brand')?.textContent`), 'RELAY');
   assert.equal(await evaluate(`document.querySelector('#tagline')?.textContent`), 'say it better.');
   assert.equal(await evaluate(`document.querySelector('header')?.innerText.includes('Private')`), false, 'Private must not appear beside the brand.');
@@ -206,12 +286,13 @@ try {
 
   const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
   await writeFile('/tmp/relay-local-mobile.png', Buffer.from(screenshot.data, 'base64'));
-  console.log('Browser E2E passed: new-user naming, brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
+  console.log('Browser E2E passed: focused invite naming, brand, empty/manage states, approval placement, visible tone rewrite, private/shared privacy, message styling, Representative control, Contacts tab, and mobile rendering.');
 } catch (error) {
   console.error('Browser E2E failed:', error?.stack || error);
   if (chromeError) console.error(chromeError);
   process.exitCode = 1;
 } finally {
+  inviteOwner?.client.close();
   cdp?.close();
   if (chrome.exitCode === null) {
     chrome.kill('SIGTERM');
@@ -219,3 +300,6 @@ try {
   }
   await rm(profileDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
 }
+
+// Node's built-in WebSocket can keep the close handshake alive after cleanup.
+process.exit(process.exitCode || 0);

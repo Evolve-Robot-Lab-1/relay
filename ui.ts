@@ -208,6 +208,16 @@ export const HTML = `<!doctype html>
     <div class="dialog-actions"><button class="secondary" type="button" data-close="create-dialog">Cancel</button><button id="create-button" class="primary" type="button" data-action="create-goal">Generate draft</button></div>
   </dialog>
 
+  <dialog id="invite-name-dialog" aria-labelledby="invite-name-title">
+    <div class="dialog-head"><h2 id="invite-name-title">Join conversation</h2></div>
+    <div class="dialog-body">
+      <label for="invite-name">What should the other person call you?</label>
+      <input id="invite-name" maxlength="48" placeholder="Your name" autocomplete="name">
+      <p class="hint">This name is saved to your private Relay profile.</p>
+    </div>
+    <div class="dialog-actions"><button id="join-conversation-button" class="primary" type="button" data-action="save-invite-name">Join conversation</button></div>
+  </dialog>
+
   <dialog id="profile-dialog">
     <div class="dialog-head"><h2>Relay profile</h2><button class="icon-btn" type="button" data-close="profile-dialog" aria-label="Close">&times;</button></div>
     <div class="dialog-body">
@@ -386,12 +396,8 @@ export const HTML = `<!doctype html>
       }
       if (message.type === 'goal-loaded' || message.type === 'invite-claimed') {
         state.goal = normalizeGoal(message.goal);
-        if (message.type === 'invite-claimed') {
-          state.invite = null;
-          state.inviteClaiming = false;
-          history.replaceState(null, '', '/');
-          toast('Conversation joined.');
-        }
+        if (state.invite) clearPendingInvite();
+        if (message.type === 'invite-claimed') toast('Conversation joined.');
         showConversation();
         return;
       }
@@ -424,13 +430,13 @@ export const HTML = `<!doctype html>
         state.toneUpdating = false;
         if (message.action === 'set-name') state.nameSaving = false;
         if (message.action === 'claim-invite') {
-          state.invite = null;
-          state.inviteClaiming = false;
-          history.replaceState(null, '', '/');
+          clearPendingInvite();
+          goHome();
         }
         if (message.action === 'draft-reply') state.replySending = false;
         if (state.goal) renderConversation();
         renderNameBanner();
+        renderInviteEntry();
         toast(message.message || 'The action could not be completed.');
       }
     }
@@ -445,7 +451,8 @@ export const HTML = `<!doctype html>
       if (!state.threads.length) state.managingThreads = false;
       renderHome();
       renderProfile();
-      if (savedName && state.profile?.name) toast('Name saved.');
+      if (savedName && state.profile?.name && !state.invite) toast('Name saved.');
+      renderInviteEntry();
       claimPendingInvite();
     }
 
@@ -466,18 +473,47 @@ export const HTML = `<!doctype html>
 
     function renderNameBanner() {
       const banner = byId('name-banner');
-      const needsName = Boolean(state.profile && !state.profile.name?.trim());
+      const needsName = Boolean(state.profile && !state.profile.name?.trim() && !state.invite);
       banner.classList.toggle('hidden', !needsName);
-      byId('name-banner-title').textContent = state.invite ? 'Choose a name to join' : 'Choose your display name';
-      banner.querySelector('span').textContent = state.invite ? 'The other person will see this name in the conversation.' : 'This is how people in your conversations will know you.';
+      byId('name-banner-title').textContent = 'Choose your display name';
+      banner.querySelector('span').textContent = 'This is how people in your conversations will know you.';
       const button = byId('save-onboarding-name');
       button.disabled = state.nameSaving;
       button.textContent = state.nameSaving ? 'Saving...' : 'Save';
     }
 
+    function renderInviteEntry() {
+      const dialog = byId('invite-name-dialog');
+      if (!state.invite) {
+        if (dialog.open) dialog.close();
+        return;
+      }
+      byId('home-view').hidden = true;
+      byId('conversation-view').hidden = true;
+      byId('name-banner').classList.add('hidden');
+      const hasName = Boolean(state.profile?.name?.trim());
+      const button = byId('join-conversation-button');
+      button.disabled = state.nameSaving || hasName || state.inviteClaiming;
+      button.textContent = hasName || state.inviteClaiming ? 'Joining...' : state.nameSaving ? 'Saving...' : 'Join conversation';
+      if (!dialog.open) {
+        dialog.showModal();
+        setTimeout(() => byId('invite-name').focus(), 50);
+      }
+    }
+
+    function clearPendingInvite() {
+      state.invite = null;
+      state.inviteClaiming = false;
+      state.nameSaving = false;
+      const dialog = byId('invite-name-dialog');
+      if (dialog.open) dialog.close();
+      history.replaceState(null, '', '/');
+    }
+
     function claimPendingInvite() {
       if (!state.invite || state.inviteClaiming || !state.profile?.name?.trim()) return;
       state.inviteClaiming = true;
+      renderInviteEntry();
       if (!send({ type:'claim-invite', invite:state.invite })) state.inviteClaiming = false;
     }
 
@@ -695,6 +731,13 @@ export const HTML = `<!doctype html>
         if (!send({ type:'set-name', name })) { state.nameSaving = false; renderNameBanner(); }
         return;
       }
+      if (action === 'save-invite-name') {
+        const name = byId('invite-name').value.trim();
+        if (!name) return toast('Enter your name to join.');
+        state.nameSaving = true; renderInviteEntry();
+        if (!send({ type:'set-name', name })) { state.nameSaving = false; renderInviteEntry(); }
+        return;
+      }
       if (action === 'save-name') return send({ type:'set-name', name:byId('display-name').value });
       if (action === 'new-profile') { localStorage.removeItem('aid'); state.recovery = ''; localStorage.removeItem('relayRecovery'); createProfile(true).catch(error => toast(error.message)); return; }
       if (action === 'restore-profile') return restoreProfile();
@@ -739,6 +782,8 @@ export const HTML = `<!doctype html>
     byId('reply-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('[data-action="draft-reply"]').click(); } });
     byId('new-message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('create-button').click(); } });
     byId('onboarding-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); byId('save-onboarding-name').click(); } });
+    byId('invite-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); byId('join-conversation-button').click(); } });
+    byId('invite-name-dialog').addEventListener('cancel', event => event.preventDefault());
     byId('profile-button').addEventListener('click', () => document.querySelector('[data-action="open-profile"]').click());
     start();
   })();
