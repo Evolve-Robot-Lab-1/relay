@@ -88,6 +88,10 @@ export const HTML = `<!doctype html>
     .fab:hover{background:#16f493}
     dialog{width:min(calc(100% - 28px),500px);max-height:calc(100vh - 40px);overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);padding:0;box-shadow:0 22px 80px #000b}
     dialog::backdrop{background:#000b}
+    #invite-name-dialog::backdrop{background:#0007;backdrop-filter:blur(1.5px)}
+    .invite-stage{pointer-events:none;user-select:none}
+    .invite-waiting{min-height:320px;display:grid;place-items:center;border-top:1px solid var(--line);margin-top:18px;text-align:center;color:var(--muted)}
+    .invite-waiting strong{display:block;color:var(--text);font-size:16px;margin-bottom:5px}
     .dialog-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
     .dialog-head h2{font-size:16px;margin:0}
     .dialog-body{padding:18px}
@@ -173,6 +177,13 @@ export const HTML = `<!doctype html>
         <div id="contact-list" class="list"></div>
       </section>
       <button class="fab" type="button" data-action="open-create" title="Start a new conversation" aria-label="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+    </section>
+
+    <section id="invite-stage" class="view invite-stage" hidden aria-hidden="true">
+      <div class="convo-head">
+        <div><h1>Private conversation</h1><div class="convo-meta"><span class="badge waiting">Invite</span><span>Ready to join</span></div></div>
+      </div>
+      <div class="invite-waiting"><div><strong>A private message is waiting.</strong><span>Join to open the conversation.</span></div></div>
     </section>
 
     <section id="conversation-view" class="view" hidden>
@@ -390,7 +401,7 @@ export const HTML = `<!doctype html>
         state.goal = normalizeGoal(message.goal);
         byId('create-dialog').close();
         byId('create-button').disabled = false;
-        if (message.shareUrl) copyText(message.shareUrl, 'Invite link copied.');
+        if (message.shareUrl) copyText(inviteShareValue(message.shareUrl), 'Invite copied.');
         showConversation();
         return;
       }
@@ -484,11 +495,16 @@ export const HTML = `<!doctype html>
 
     function renderInviteEntry() {
       const dialog = byId('invite-name-dialog');
+      const home = byId('home-view');
+      const stage = byId('invite-stage');
       if (!state.invite) {
+        stage.hidden = true;
         if (dialog.open) dialog.close();
         return;
       }
-      byId('home-view').hidden = true;
+      home.hidden = true;
+      stage.hidden = false;
+      stage.inert = true;
       byId('conversation-view').hidden = true;
       byId('name-banner').classList.add('hidden');
       const hasName = Boolean(state.profile?.name?.trim());
@@ -507,6 +523,7 @@ export const HTML = `<!doctype html>
       state.nameSaving = false;
       const dialog = byId('invite-name-dialog');
       if (dialog.open) dialog.close();
+      byId('invite-stage').hidden = true;
       history.replaceState(null, '', '/');
     }
 
@@ -676,16 +693,21 @@ export const HTML = `<!doctype html>
       catch { window.prompt('Copy this value:', value); }
     }
 
+    function inviteShareValue(value) {
+      return 'Your response is needed. Join our private Relay conversation.\\n' + value;
+    }
+
     async function shareInvite(value) {
+      const text = 'Your response is needed. Join our private Relay conversation.';
       if (navigator.share) {
         try {
-          await navigator.share({ title:'Relay conversation', text:'Join me on Relay', url:value });
+          await navigator.share({ title:'Response requested', text, url:value });
           return;
         } catch (error) {
           if (error?.name === 'AbortError') return;
         }
       }
-      return copyText(value, 'Invite link copied.');
+      return copyText(inviteShareValue(value), 'Invite copied.');
     }
 
     function openCreate(contactId = '') {

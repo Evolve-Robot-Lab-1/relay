@@ -197,7 +197,11 @@ try {
   assert.equal(await evaluate(`document.querySelector('#name-banner').classList.contains('hidden')`), true, 'The generic name banner must not compete with an invite.');
   assert.equal(await evaluate(`document.querySelector('#invite-name-dialog').open`), true, 'An invite should open the focused name popup.');
   assert.equal(await evaluate(`document.querySelector('#invite-name-title').textContent`), 'Join conversation');
-  assert.equal(await evaluate(`document.querySelector('#home-view').hidden`), true, 'The home actions must stay hidden while joining an invite.');
+  assert.equal(await evaluate(`document.querySelector('#home-view').hidden`), true, 'Home actions must not compete with joining an invite.');
+  assert.equal(await evaluate(`document.querySelector('#invite-stage').hidden`), false, 'A safe conversation preview should remain visible behind the popup.');
+  assert.equal(await evaluate(`document.querySelector('#invite-stage').inert`), true, 'The preview must not accept input while the popup is open.');
+  assert.ok((await evaluate(`document.querySelector('#invite-stage').textContent`)).includes('A private message is waiting.'));
+  assert.equal((await evaluate(`document.querySelector('#invite-stage').textContent`)).includes('project timeline'), false, 'The actual request must remain private before claim.');
   assert.equal(await evaluate(`document.querySelector('#join-conversation-button').textContent`), 'Join conversation');
   await delay(500);
   assert.equal((await evaluate(`document.querySelector('#toast').textContent`)).includes('Invite unavailable'), false, 'An unnamed profile must not claim the invite.');
@@ -212,6 +216,7 @@ try {
   await waitFor(`!document.querySelector('#invite-name-dialog').open`, 'The invite name popup did not complete.');
   await waitFor(`location.pathname === '/' && location.search === ''`, 'The invite was not attempted after the name was saved.');
   await waitFor(`!document.querySelector('#conversation-view').hidden && document.querySelectorAll('#message-list .message:not(.mine)').length === 1`, 'The invite did not open its conversation.');
+  assert.equal(await evaluate(`document.querySelector('#invite-stage').hidden`), true);
   assert.equal(await evaluate(`document.querySelector('#conversation-peer').textContent`), 'Invite Owner');
   console.log('Browser: invite name saved and conversation joined');
   await evaluate(`window.confirm = () => true; document.querySelector('[data-action="remove-conversation"]').click()`);
@@ -226,7 +231,7 @@ try {
   assert.ok(await evaluate(`document.querySelector('#profile-button svg.icon') !== null`), 'Profile should use an outline icon.');
   assert.equal(await evaluate(`document.querySelector('#manage-conversations-button').classList.contains('hidden')`), true, 'Manage must be hidden for an empty list.');
   assert.ok((await evaluate(`document.querySelector('#thread-list').textContent`)).includes('Start one when there is something you would rather not say alone.'));
-  await evaluate(`Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async()=>{} } })`);
+  await evaluate(`window.__copied = ''; Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:async value => { window.__copied = value; } } })`);
   await evaluate(`window.prompt = () => ''`);
   await evaluate(`document.querySelector('#thread-list [data-action="open-create"]').click()`);
   assert.equal(await evaluate(`document.querySelector('label[for="new-message"]').textContent`), 'What do you want to communicate?');
@@ -237,6 +242,8 @@ try {
   await waitFor(`!document.querySelector('#draft-card').classList.contains('hidden') || document.querySelector('#toast').textContent.includes('not sent')`, 'Generate Draft produced no UI result.');
   const createError = await evaluate(`document.querySelector('#draft-card').classList.contains('hidden') ? document.querySelector('#toast').textContent : ''`);
   assert.equal(createError, '', 'Generate Draft failed in the browser: ' + createError);
+  assert.ok((await evaluate(`window.__copied`)).includes('Your response is needed. Join our private Relay conversation.'));
+  assert.match(await evaluate(`window.__copied`), /\/i\/[A-Za-z0-9_-]{22}/);
   console.log('Browser: first draft generated');
 
   const professionalDraft = await evaluate(`document.querySelector('#draft-text').textContent`);
