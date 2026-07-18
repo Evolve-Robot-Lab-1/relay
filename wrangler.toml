@@ -11,6 +11,10 @@ kv_namespaces = [
 # Workers AI for message processing
 ai = { binding = "AI" }
 
+routes = [
+  { pattern = "relay.durgaai.com", custom_domain = true }
+]
+
 [[durable_objects.bindings]]
 name = "RELAY_STORE"
 class_name = "RelayStore"
