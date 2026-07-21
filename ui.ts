@@ -927,19 +927,42 @@ export const HTML = `<!doctype html>
 
     function detailStatus(original, draft, threadText, goal) {
       const result = goal?.result || {};
-      const thread = String(threadText || '');
-      const threadL = thread.toLocaleLowerCase();
-      const source = (original + ' ' + draft + ' ' + thread).toLocaleLowerCase();
+      const messages = (goal?.thread || []).filter(item => !item.deletedAt);
+      const threadL = messages.map(item => item.text).join(' ').toLocaleLowerCase() || String(threadText || '').toLocaleLowerCase();
+      const source = (original + ' ' + draft + ' ' + threadL).toLocaleLowerCase();
+      const confirmRe = /\\b(works(?:\\s+for\\s+me)?|that\\s+works|sounds\\s+good|perfect|confirmed|it'?s\\s+a\\s+deal|see\\s+you(?:\\s+then)?|i'?ll\\s+be\\s+there|fine\\s+with\\s+me|ok(?:ay)?\\s+for\\s+me|yes\\s+that(?:\\s+time)?|locked\\s+in|done)\\b/i;
       if (goal?.status === 'closed' || result.status === 'closed' || goal?.status === 'cancelled') return 'Closed';
       if (goal?.status === 'resolved' || ['confirmed', 'resolved'].includes(result.status)) {
         if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin)/i.test(threadL)) return 'Declined';
         return 'Agreed';
       }
       if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin|not free|busy)\\b/i.test(threadL)) return 'Declined';
-      const day = extractDay(thread) || extractDay(draft) || extractDay(original);
-      const clock = extractClock(thread) || extractClock(draft) || extractClock(original);
-      const accepted = /\\b(works|yes|yep|yeah|ok|okay|sure|fine|perfect|sounds good|available|i'?m free)\\b/i.test(threadL);
-      if ((day || clock) && accepted) return 'Agreed';
+
+      // Same message both proposes a time and confirms it (e.g. "Tomorrow at 10 am works").
+      for (const message of messages) {
+        if (extractClock(message.text) && confirmRe.test(message.text)) return 'Agreed';
+      }
+
+      // Time proposed by one side → Agreed only after the other side confirms.
+      let proposedBy = null;
+      let proposedAt = -1;
+      for (let i = 0; i < messages.length; i += 1) {
+        if (extractClock(messages[i].text)) {
+          proposedBy = messages[i].from;
+          proposedAt = i;
+          break;
+        }
+      }
+      if (proposedAt >= 0) {
+        for (let i = proposedAt + 1; i < messages.length; i += 1) {
+          const message = messages[i];
+          if (proposedBy && message.from === proposedBy) continue;
+          if (confirmRe.test(message.text)) return 'Agreed';
+        }
+      }
+
+      const day = extractDay(threadL) || extractDay(draft) || extractDay(original);
+      const clock = extractClock(threadL) || extractClock(draft) || extractClock(original);
       if (day || clock) return 'Proposed';
       if (isMeetingIntent(source) || /\\b(invite|invitation|repay|pay|amount|₹)\\b/.test(source)) return 'Open';
       return 'Open';
