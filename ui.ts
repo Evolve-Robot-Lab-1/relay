@@ -856,14 +856,15 @@ export const HTML = `<!doctype html>
         || /\\b(tmrw|tomorrow|today|tonight)\\b/.test(source);
     }
 
-    function summarizeGoal(original, draft) {
+    function summarizeGoal(original, draft, threadText) {
       const draftL = String(draft || '').toLocaleLowerCase();
       const originalL = String(original || '').toLocaleLowerCase();
-      const source = draftL + ' ' + originalL;
-      const day = extractDay(draft) || extractDay(original);
-      const amount = extractAmount(draft) || extractAmount(original);
+      const threadL = String(threadText || '').toLocaleLowerCase();
+      const source = draftL + ' ' + originalL + ' ' + threadL;
+      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
+      const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
       const dayPhrase = day === 'Tomorrow' ? 'tomorrow' : day === 'Today' ? 'today' : day === 'Tonight' ? 'tonight' : day ? ('on ' + day) : '';
-      const clock = extractClock(draft) || extractClock(original);
+      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
 
       if (/\\b(cancel|withdraw)\\b/.test(source)) return 'Cancel the outstanding request';
       if (/\\b(decline|reject|not accept)\\b/.test(source)) {
@@ -920,32 +921,32 @@ export const HTML = `<!doctype html>
       return 'Get a clear answer from the other person';
     }
 
-    function formatKeyDetails(original, draft) {
-      const day = extractDay(draft) || extractDay(original);
-      const clock = extractClock(draft) || extractClock(original);
-      const amount = extractAmount(draft) || extractAmount(original);
-      const where = extractWhere(draft) || extractWhere(original);
+    function formatKeyDetails(original, draft, threadText) {
+      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
+      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
+      const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
+      const where = extractWhere(threadText) || extractWhere(draft) || extractWhere(original);
       const parts = [];
-      if (isMeetingIntent((original + ' ' + draft).toLocaleLowerCase()) || day || clock) {
+      if (isMeetingIntent((original + ' ' + draft + ' ' + threadText).toLocaleLowerCase()) || day || clock) {
         parts.push('Date: ' + (day || 'Not specified'));
         parts.push('Time: ' + (clock || 'Not specified'));
       }
       if (amount) parts.push('Amount: ' + amount);
-      const combined = original + ' ' + draft;
+      const combined = original + ' ' + draft + ' ' + threadText;
       if (/\\brepay|pay\\s*back\\b/i.test(combined)) {
-        const repay = (draft + ' ' + original).match(/(?:repay|pay\\s*back)[^.!?]{0,40}/i);
+        const repay = (threadText + ' ' + draft + ' ' + original).match(/(?:repay|pay\\s*back)[^.!?]{0,40}/i);
         parts.push('Repayment: ' + (repay ? repay[0].trim() : 'Mentioned'));
       }
       if (where && !/^\\d/.test(where) && !/am|pm/i.test(where)) parts.push('Place: ' + where);
       return parts.join(' · ');
     }
 
-    function formatGoalMeta(original, draft) {
-      const day = extractDay(draft) || extractDay(original);
-      const clock = extractClock(draft) || extractClock(original);
-      const amount = extractAmount(draft) || extractAmount(original);
-      const where = extractWhere(draft) || extractWhere(original);
-      const source = (original + ' ' + draft).toLocaleLowerCase();
+    function formatGoalMeta(original, draft, threadText) {
+      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
+      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
+      const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
+      const where = extractWhere(threadText) || extractWhere(draft) || extractWhere(original);
+      const source = (original + ' ' + draft + ' ' + threadText).toLocaleLowerCase();
       if (isMeetingIntent(source) || day || clock) {
         return 'Date: ' + (day || 'Not specified') + (clock ? ' · Time: ' + clock : '');
       }
@@ -986,9 +987,10 @@ export const HTML = `<!doctype html>
 
     function extractIntentRows(goal) {
       const { original, draft } = intentSource(goal);
+      const threadText = (goal.thread || []).filter(item => !item.deletedAt).map(item => item.text).join(' ');
       const reviewing = Boolean(goal.pendingDraft);
-      const rows = [['Goal', summarizeGoal(original, draft)]];
-      const details = formatKeyDetails(original, draft);
+      const rows = [['Goal', summarizeGoal(original, draft, threadText)]];
+      const details = formatKeyDetails(original, draft, threadText);
       if (details) rows.push(['Key details', details]);
       rows.push(['Status', intentGoalStatus(goal)]);
       if (reviewing) {
@@ -1208,8 +1210,9 @@ export const HTML = `<!doctype html>
         return;
       }
       const { original, draft } = intentSource(goal);
-      const goalText = simplifyGoalLine(summarizeGoal(original, draft));
-      const metaText = formatGoalMeta(original, draft);
+      const threadText = (goal.thread || []).filter(item => !item.deletedAt).map(item => item.text).join(' ');
+      const goalText = simplifyGoalLine(summarizeGoal(original, draft, threadText));
+      const metaText = formatGoalMeta(original, draft, threadText);
       if (main) main.textContent = 'Goal: ' + goalText;
       if (meta) meta.textContent = metaText;
       topic.title = 'Goal: ' + goalText + '\\n' + metaText;
