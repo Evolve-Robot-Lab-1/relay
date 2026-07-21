@@ -1,6 +1,34 @@
 # Relay
 
-Relay helps two people conduct a difficult conversation through private AI representatives. Each participant keeps their original instructions private while approving the messages shared with the other side.
+**Live demo:** [https://relay.durgaai.com](https://relay.durgaai.com)  
+**Tagline:** Say it better.
+
+Relay is a human-controlled communication representative. A user privately explains what they want; Relay understands the goal, drafts a clear message in a chosen tone, and shares nothing until the user approves. The other person joins through a secure invite link. Private instructions stay private; both sides stay in control of commitments.
+
+## OpenAI Build Week — Codex & GPT-5.6
+
+Judges: this section is the required highlight of how **Codex** and **GPT-5.6** were used.
+
+### Codex (primary build agent)
+
+Codex was used as the main coding partner to build and harden Relay during Build Week:
+
+- Map and reconstruct a fast-moving Cloudflare Workers + Durable Object codebase (`server.ts`, `backend.ts`, `ui.ts`)
+- Design the conversation-state model (intent → draft → approve → invite → join → outcome)
+- Implement secure single-use invite claiming and participant-specific private/shared serialization
+- Build and debug real-time WebSocket sync between two participants
+- Improve mobile-responsive UI and simplify invite-ready / goal / status chrome
+- Add regression and smoke tests (`tests/`), including meeting-demo flows
+- Recover from a broken production deploy with rollback, local-first checks, then verified production release
+- Author Build Week docs (`RELAY_BUILD_WEEK.md`, `DEVPOST.md`) and keep an operational session record
+
+### GPT-5.6
+
+**GPT-5.6 was used through Codex sessions** for product reasoning and implementation work: goal/intent framing, approval and trust-boundary design, draft-prompt and validation strategy, UX simplification decisions, and edge-case review (false agreement, private-intent leakage, invite races).
+
+**Production message drafting** is intentionally provider-routed so a free-tier outage cannot silently send private text. Live drafting currently uses **Groq** (`openai/gpt-oss-120b` / `openai/gpt-oss-20b` with sticky multi-key rotation) and **Cloudflare Workers AI** as fallback. The architecture can add OpenAI GPT-5.6 as a primary or independent drafting path without changing the Human → Representative → Representative → Human approval model.
+
+Relay never silently books meetings, accepts prices, or treats silence/proposals as confirmation. Humans approve outbound messages and real-world next steps.
 
 ## Quick Start
 
@@ -17,11 +45,12 @@ npm run deploy
 
 ## How It Works
 
-1. Open Relay and enter the conversation objective.
-2. Relay drafts the first message for approval.
-3. Share the generated conversation link with the other participant.
-4. Relay improves replies without changing their meaning or forcing agreement.
-5. Private and shared tabs keep original instructions separate from transmitted messages.
+1. Open Relay and privately describe the intent.
+2. Relay extracts a short **Goal** (and details like **Date:**) and drafts a message.
+3. Choose tone (Professional / Friendly / Direct / Casual), review, and **approve**.
+4. Share the secure invite link with one other participant.
+5. Both sides continue the conversation; Relay tracks outcome toward goal reached, declined, or closed.
+6. Private originals stay visible only to their author; only approved text is shared.
 
 ## Conversation Rule
 
@@ -44,6 +73,15 @@ Relay never invents facts, promises, commitments, consent, or enthusiasm. It nev
 - Durable Object-owned real-time WebSocket updates
 - Durable Object persistence with legacy KV compatibility
 
+## Stack
+
+- TypeScript on **Cloudflare Workers**
+- **Durable Objects** (SQLite) for authoritative conversation state
+- WebSockets for real-time sync
+- Workers KV (legacy read compatibility)
+- Groq + Workers AI for drafting (see Build Week section above)
+- Wrangler for local/dev/deploy
+
 ## Files
 
 - `RELAY_BUILD_WEEK.md` - product vision, Build Week narrative, demo plan, submission copy, risks, and roadmap
@@ -64,7 +102,8 @@ npx wrangler login
 npm run deploy
 ```
 
-Production: https://agent-network.salesagent.workers.dev
+Production: [https://relay.durgaai.com](https://relay.durgaai.com)  
+Worker: https://agent-network.salesagent.workers.dev
 
 ## Verify
 
