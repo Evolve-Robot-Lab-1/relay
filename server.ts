@@ -40,7 +40,9 @@ export default {
     if (url.pathname.startsWith('/api/') || url.pathname === '/ws') return forward(request, env, url);
     if (/^\/relay-[a-z-]+\.png$/.test(url.pathname)) return env.ASSETS.fetch(request);
     if (url.pathname === '/favicon.ico') return env.ASSETS.fetch(new Request(new URL('/relay-mark.png', url.origin), request));
-    const appRoute = url.pathname === '/' || /^\/i\/[A-Za-z0-9_-]{22}\/?$/.test(url.pathname);
+    const appRoute = url.pathname === '/'
+      || /^\/i\/[A-Za-z0-9_-]{22}\/?$/.test(url.pathname)
+      || /^\/c\/G[0-9a-f]{32}\/?$/i.test(url.pathname);
     if (request.method !== 'GET' || !appRoute) return new Response('Not found', { status: 404 });
     const scriptNonce = nonce();
     return new Response(HTML.replace('__NONCE__', scriptNonce), { headers: securityHeaders(scriptNonce) });

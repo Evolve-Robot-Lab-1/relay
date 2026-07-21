@@ -1,24 +1,26 @@
 # Relay Session Save
 
-Last updated: 2026-07-19 (Asia/Kolkata)
+Last updated: 2026-07-20 (Asia/Kolkata)
+
+## Session: 2026-07-20 evening
+
+- Full log: `/home/evolve/AI PROJECT/DURGA_PLANS/sessions/2026-07-20_Relay_UX_Freeze_MVP_Submit.md`
+- Local UX shipped in working tree (intent review, structured Goal/Status, waiting banner) — **not deployed**
+- Connector roadmap locked but deferred: Remind me → Google Calendar (+ Meet) after submission
+- Freeze for Build Week submit: no OAuth/Calendar/Meet/Gmail; only break-fix if needed
+- Priority: Test → Record demo → Submission → Publish
+- Local UX polish 2026-07-20 late: empty-state starters, progress strip (Draft→Shared→Waiting→Goal reached), stronger privacy copy, friendlier errors, post-completion “Did Relay help?” + Coming next labels. Still local-only / not deployed.
 
 ## Production
 
 - Primary URL: https://relay.durgaai.com
 - Worker URL: https://agent-network.salesagent.workers.dev
 - Cloudflare Worker: `agent-network`
-- Active version: `21b72cd9-fd3b-4084-99a3-0ea6e9135bdf`
-- Git commit: `1edff79` (`fix: preserve intent and strengthen draft tones`)
-- Short-invite commit: `f9294a1` (`feat: shorten secure conversation invites`)
-- Drafting release tag: `production-relay-drafting-v1-2026-07-18` (`7a1f145`)
-- Incident rollback version: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
-
-### Drafting Release
-
-- The 2026-07-19 drafting release is active in production. Wrangler now uses the renewed Cloudflare OAuth login; the old API token is invalid.
-- Drafting preserves unstated currencies, explicit currency kinds, attached-unit numbers such as `14k`, time qualifiers, disagreement polarity, boundaries, and cancellation intent.
-- Professional, Friendly, Direct, and Casual now have distinct guidance and validation. Tone-only retries can use a conservative, meaning-checked restyle of the last approved draft when providers are temporarily unavailable.
-- Groq remains primary (`openai/gpt-oss-120b`, then `openai/gpt-oss-20b`), with Workers AI as fallback. Provider quota exhaustion is detected so unavailable models are skipped during a request.
+- Active version: `bdea5ea6-b1c5-4423-8dd2-a670706389f8` (deployed 2026-07-20 — UI polish + sticky Groq keys; no speech-act)
+- Stable rollback: `d40aebd3-f9da-4673-a1c8-43278ae03baa`
+- Rolled-back mixed build: `cbdf0561` (rotation + intent guards — do not redeploy)
+- Deployed: UI intent/review + sticky Groq keys. Speech-act / grounding removed. Prod meeting smoke passed (create→approve→join→10am reply→resolve).
+- Older incident rollback: `bac11794-b4bc-4d15-a83e-05c3b37c5816`
 
 ## Product Rule
 
@@ -36,10 +38,11 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 ## Product Freeze And User Study
 
 - Effective 2026-07-19, Relay is under a feature freeze while real users test the MVP.
-- Do not add product features or make speculative workflow and UI changes.
-- The only planned engineering work is adding AI model capacity/reliability and privacy-safe operational logging.
+- **2026-07-20 submit freeze:** MVP boundary is intent → communicate → approve → join → outcome. Do not add connectors before submission.
+- Allowed fixes only: broken buttons/states, invite failures, mobile layout, incorrect intent extraction, approval/privacy confusion, goal status, loading/errors.
+- Do not add: Google OAuth, Calendar, Meet, Gmail, more screens/tones, complex agreement logic, fake working connector buttons (label “Coming next” only if shown).
 - Collect onboarding friction, draft quality failures, invite completion, reply completion, and direct user feedback without storing private message content.
-- Product changes after the freeze must be justified by repeated user evidence, not isolated preference or untested assumptions.
+- After submit: internal Remind me first, then one Google Calendar connector (events + Meet + reminders).
 
 ## Architecture
 
@@ -48,7 +51,7 @@ A conversation result may be an agreement, answer, clarification, rejection, del
 - `ui.ts` is a DOM-safe browser client with no dynamic `innerHTML` or inline event handlers.
 - `RELAY_STORE` is the SQLite-backed Durable Object and owns all writable state.
 - `AGENTS_KV` remains a read-only fallback for legacy records.
-- Drafting uses Groq first (`openai/gpt-oss-120b`, then `openai/gpt-oss-20b`) with Workers AI models as fallbacks.
+- Drafting uses Groq first (`openai/gpt-oss-120b`, then `openai/gpt-oss-20b`) with multi-key rotation (`GROQ_KEY_1`–`3`), Workers AI as fallback, and optional local-only NVIDIA when configured.
 - Draft output is checked for meaning preservation, privacy leakage, and excessive length before it can be shared.
 
 ## Identity And Recovery

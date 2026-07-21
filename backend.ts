@@ -5,6 +5,7 @@ const CLOUDFLARE_AI_MODELS = [
 ];
 const GROQ_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_KEY_ENVS = ['GROQ_API_KEY', 'GROQ_KEY_1', 'GROQ_KEY_2', 'GROQ_KEY_3'];
 const DELETED_VALUE = '__relay_deleted_v1__';
 const PROFILE_PREFIX = 'RLY1';
 const TONES = new Set(['professional', 'friendly', 'direct', 'casual']);
@@ -372,6 +373,8 @@ export class RelayStore {
   sockets: Map<string, Set<any>>;
   rates: Map<string, number[]>;
   queues: Map<string, Promise<unknown>>;
+
+  unavailableGroqKeys: Set<string> = new Set();
 
   constructor(state: any, env: any) {
     this.state = state;
@@ -1175,8 +1178,9 @@ export class RelayStore {
   }
 
   async makeDraft(profileId: string, peerId: string | null, raw: string, tone: string, goal: any, previousDraft = '') {
-    if (!this.env.GROQ_API_KEY && !this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    if (!this.groqApiKeys().length && !this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
     if (!this.allow(`ai:${profileId}`, 40, 60_000)) throw new Error('Please wait a moment before requesting another rewrite.');
+    this.unavailableGroqKeys = new Set();
     const recentMessages = goal?.thread?.filter((item: any) => !item.deletedAt).slice(-8) || [];
     const history = recentMessages.map((item: any) => `${item.from === profileId ? 'User' : 'Other person'}: ${item.text}`).join('\n') || '(none)';
     const latestOtherMessage = [...recentMessages].reverse().find((item: any) => item.from !== profileId)?.text || '(none)';
@@ -1242,7 +1246,7 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When
           { role: 'system', content: prompt },
           { role: 'user', content: `Message type: ${messageKind}\nRecipient: ${peerId || 'not joined'}\nOther person's latest message:\n${latestOtherMessage}\n\nConversation context (reference only):\n${history}\n\nUser's private intent for this outgoing message:\n${raw}${previous ? `\n\nPrevious draft to restyle:\n${previous}` : ''}${retryRule}` }
         ];
-        let response = cleanText(await this.runRewriteModel(messages, modelIndex), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let response = cleanText(await this.runRewriteModel(messages, modelIndex, profileId), 10_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         const start = response.indexOf('{');
         const end = response.lastIndexOf('}');
         if (start >= 0 && end > start) response = response.slice(start, end + 1);
@@ -1295,46 +1299,94 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When
     throw new Error('Relay could not rewrite this message. Your private message was not sent. Please try again.');
   }
 
-  rewriteModelCount() {
-    return (this.env.GROQ_API_KEY ? GROQ_AI_MODELS.length : 0) + (this.env.AI ? CLOUDFLARE_AI_MODELS.length : 0);
+  groqApiKeys() {
+    const keys: string[] = [];
+    for (const name of GROQ_KEY_ENVS) {
+      const value = cleanText(this.env[name], 200);
+      if (value && !keys.includes(value)) keys.push(value);
+    }
+    return keys;
   }
 
-  async runRewriteModel(messages: any[], modelIndex: number) {
-    const groqCount = this.env.GROQ_API_KEY ? GROQ_AI_MODELS.length : 0;
-    if (modelIndex < groqCount) {
-      const model = GROQ_AI_MODELS[modelIndex];
-      const body: any = {
-        model,
-        messages,
-        temperature: 0.2,
-        max_completion_tokens: 240,
-        reasoning_effort: 'low'
-      };
-      if (model !== 'openai/gpt-oss-20b') body.response_format = { type: 'json_object' };
-      const response = await fetch(GROQ_CHAT_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${this.env.GROQ_API_KEY}`,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      });
-      const data: any = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const detail = cleanText(data?.error?.message, 600) || `Groq returned HTTP ${response.status}.`;
-        const retryMatch = /try again in\s+([\d.]+)\s*(ms|s|m)(?:\s*([\d.]+)\s*s)?/i.exec(detail);
-        const headerSeconds = Number(response.headers.get('retry-after') || 0);
-        const retryAfterMs = retryMatch
-          ? Number(retryMatch[1]) * (retryMatch[2].toLowerCase() === 'ms' ? 1 : retryMatch[2].toLowerCase() === 'm' ? 60_000 : 1000)
-            + Number(retryMatch[3] || 0) * 1000
-          : headerSeconds * 1000;
-        const error: any = new Error(`${model}: ${cleanText(detail, 240)}`);
-        if (response.status === 429 && retryAfterMs > 0) error.retryAfterMs = Math.ceil(retryAfterMs + 150);
+  stickyGroqKeyIndex(profileId: string) {
+    const keys = this.groqApiKeys();
+    if (!keys.length) return 0;
+    let hash = 0;
+    for (let i = 0; i < profileId.length; i += 1) hash = (hash * 31 + profileId.charCodeAt(i)) >>> 0;
+    return hash % keys.length;
+  }
+
+  rewriteModelCount() {
+    return (this.groqApiKeys().length ? GROQ_AI_MODELS.length : 0) + (this.env.AI ? CLOUDFLARE_AI_MODELS.length : 0);
+  }
+
+  async runGroqWithStickyKeys(model: string, messages: any[], profileId: string) {
+    const keys = this.groqApiKeys();
+    if (!keys.length) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
+    const start = this.stickyGroqKeyIndex(profileId);
+    let lastError: any = null;
+    for (let offset = 0; offset < keys.length; offset += 1) {
+      const index = (start + offset) % keys.length;
+      const apiKey = keys[index];
+      if (this.unavailableGroqKeys.has(apiKey)) continue;
+      try {
+        const body: any = {
+          model,
+          messages,
+          temperature: 0.2,
+          max_completion_tokens: 240,
+          reasoning_effort: 'low'
+        };
+        if (model !== 'openai/gpt-oss-20b') body.response_format = { type: 'json_object' };
+        const response = await fetch(GROQ_CHAT_URL, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        const data: any = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = cleanText(data?.error?.message, 600) || `Groq returned HTTP ${response.status}.`;
+          const retryMatch = /try again in\s+([\d.]+)\s*(ms|s|m)(?:\s*([\d.]+)\s*s)?/i.exec(detail);
+          const headerSeconds = Number(response.headers.get('retry-after') || 0);
+          const retryAfterMs = retryMatch
+            ? Number(retryMatch[1]) * (retryMatch[2].toLowerCase() === 'ms' ? 1 : retryMatch[2].toLowerCase() === 'm' ? 60_000 : 1000)
+              + Number(retryMatch[3] || 0) * 1000
+            : headerSeconds * 1000;
+          const error: any = new Error(`${model}: ${cleanText(detail, 240)}`);
+          if (response.status === 429 || /rate limit|quota|allocation|used up/i.test(detail)) {
+            error.retryAfterMs = retryAfterMs > 0 ? Math.ceil(retryAfterMs + 150) : 15_000;
+            this.unavailableGroqKeys.add(apiKey);
+            console.warn(`Relay Groq key ${index + 1} rate-limited for ${profileId}; trying next key.`);
+            lastError = error;
+            continue;
+          }
+          throw error;
+        }
+        const message = data?.choices?.[0]?.message || {};
+        const content = cleanText(message.content, 10_000) || cleanText(message.reasoning, 10_000);
+        if (!content) throw new Error(`${model}: Groq returned an empty response.`);
+        return content;
+      } catch (error: any) {
+        lastError = error;
+        if (error?.retryAfterMs || /rate limit/i.test(String(error?.message || ''))) {
+          this.unavailableGroqKeys.add(apiKey);
+          continue;
+        }
         throw error;
       }
-      const content = cleanText(data?.choices?.[0]?.message?.content, 10_000);
-      if (!content) throw new Error(`${model}: Groq returned an empty response.`);
-      return content;
+    }
+    const error: any = lastError || new Error(`${model}: All Groq API keys are unavailable.`);
+    if (!error.retryAfterMs) error.retryAfterMs = 15_000;
+    throw error;
+  }
+
+  async runRewriteModel(messages: any[], modelIndex: number, profileId = '') {
+    const groqCount = this.groqApiKeys().length ? GROQ_AI_MODELS.length : 0;
+    if (modelIndex < groqCount) {
+      return this.runGroqWithStickyKeys(GROQ_AI_MODELS[modelIndex], messages, profileId);
     }
 
     const cloudflareIndex = modelIndex - groqCount;
@@ -1363,4 +1415,5 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When
     if (!content) throw new Error(`${model.id}: The model returned an empty response.`);
     return content;
   }
+
 }
