@@ -818,17 +818,34 @@ export const HTML = `<!doctype html>
 
     function extractClock(text) {
       const source = String(text || '');
-      let match = source.match(/\\b(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)\\b/i);
-      if (!match) match = source.match(/\\bat\\s+(\\d{1,2})(?::(\\d{2}))?\\b/i);
-      if (!match) return '';
-      let hour = Number(match[1]);
-      const minute = match[2] || '00';
-      let meridiem = (match[3] || '').toUpperCase();
+      let hour = 0;
+      let minute = '00';
+      let meridiem = '';
+      const dotted = source.match(/\\b(\\d{1,2})[:.](\\d{2})\\s*(am|pm)\\b/i);
+      if (dotted) {
+        hour = Number(dotted[1]);
+        minute = dotted[2];
+        meridiem = dotted[3].toUpperCase();
+      } else {
+        const plain = source.match(/\\b(\\d{1,2})\\s*(am|pm)\\b/i);
+        if (plain) {
+          hour = Number(plain[1]);
+          meridiem = plain[2].toUpperCase();
+        } else {
+          const at = source.match(/\\bat\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\b/i);
+          if (!at) return '';
+          hour = Number(at[1]);
+          if (at[2]) minute = at[2];
+        }
+      }
+      if (hour > 23 || Number(minute) > 59) return '';
       if (!meridiem) {
         if (hour >= 1 && hour <= 11) meridiem = 'AM';
         else if (hour === 12) meridiem = 'PM';
         else if (hour > 12 && hour < 24) { hour -= 12; meridiem = 'PM'; }
         else meridiem = 'AM';
+      } else if (hour < 1 || hour > 12) {
+        return '';
       }
       return hour + ':' + minute + ' ' + meridiem;
     }
