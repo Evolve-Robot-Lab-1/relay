@@ -856,15 +856,14 @@ export const HTML = `<!doctype html>
         || /\\b(tmrw|tomorrow|today|tonight)\\b/.test(source);
     }
 
-    function summarizeGoal(original, draft, threadText) {
+    function summarizeGoal(original, draft) {
       const draftL = String(draft || '').toLocaleLowerCase();
       const originalL = String(original || '').toLocaleLowerCase();
-      const threadL = String(threadText || '').toLocaleLowerCase();
-      const source = draftL + ' ' + originalL + ' ' + threadL;
-      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
-      const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
+      const source = draftL + ' ' + originalL;
+      const day = extractDay(draft) || extractDay(original);
+      const amount = extractAmount(draft) || extractAmount(original);
       const dayPhrase = day === 'Tomorrow' ? 'tomorrow' : day === 'Today' ? 'today' : day === 'Tonight' ? 'tonight' : day ? ('on ' + day) : '';
-      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
+      const clock = extractClock(draft) || extractClock(original);
 
       if (/\\b(cancel|withdraw)\\b/.test(source)) return 'Cancel the outstanding request';
       if (/\\b(decline|reject|not accept)\\b/.test(source)) {
@@ -878,27 +877,15 @@ export const HTML = `<!doctype html>
       if (isMeetingIntent(source) && !/\\bworkshop\\b/.test(source)) {
         const online = /\\b(online|virtual|zoom|google meet|video call)\\b/.test(source);
         const arrange = /\\b(arrange|schedule|set up|setup)\\b/.test(source) || online;
-        let verb = arrange ? ('Arrange' + (online ? ' an online meeting' : ' a meeting')) : 'Confirm availability for a meeting';
-        if (dayPhrase) verb += ' ' + dayPhrase;
-        if (clock) verb += ' at ' + clock;
-        return verb;
+        if (arrange) return online ? 'Request an online meeting' : 'Request a meeting';
+        return 'Confirm availability for a meeting';
       }
 
       if (/\\b(invite|invitation|workshop|event|rsvp)\\b/.test(source)) {
         if (/\\b(decline|reject|not accept)\\b/.test(source)) return 'Decline the invitation politely';
-        if (/\\bworkshop\\b/.test(source)) {
-          return dayPhrase
-            ? ('Get a clear response to the workshop invitation ' + dayPhrase)
-            : 'Get a clear response to the workshop invitation';
-        }
-        if (/\\bevent\\b/.test(source)) {
-          return dayPhrase
-            ? ('Get a clear response to the event invitation ' + dayPhrase)
-            : 'Get a clear response to the event invitation';
-        }
-        return dayPhrase
-          ? ('Get a clear response to the invitation ' + dayPhrase)
-          : 'Get a clear response to the invitation';
+        if (/\\bworkshop\\b/.test(source)) return 'Get a clear response to the workshop invitation';
+        if (/\\bevent\\b/.test(source)) return 'Get a clear response to the event invitation';
+        return 'Get a clear response to the invitation';
       }
 
       if (/\\b(lend|borrow|owe|bill|rupees?|money|amount|₹|rs|repay|pay\\s*back)\\b/.test(source) || amount) {
@@ -921,7 +908,27 @@ export const HTML = `<!doctype html>
       return 'Get a clear answer from the other person';
     }
 
-    function formatKeyDetails(original, draft, threadText) {
+    function detailStatus(original, draft, threadText, goal) {
+      const result = goal?.result || {};
+      const thread = String(threadText || '');
+      const threadL = thread.toLocaleLowerCase();
+      const source = (original + ' ' + draft + ' ' + thread).toLocaleLowerCase();
+      if (goal?.status === 'closed' || result.status === 'closed' || goal?.status === 'cancelled') return 'Closed';
+      if (goal?.status === 'resolved' || ['confirmed', 'resolved'].includes(result.status)) {
+        if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin)/i.test(threadL)) return 'Declined';
+        return 'Agreed';
+      }
+      if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin|not free|busy)\\b/i.test(threadL)) return 'Declined';
+      const day = extractDay(thread) || extractDay(draft) || extractDay(original);
+      const clock = extractClock(thread) || extractClock(draft) || extractClock(original);
+      const accepted = /\\b(works|yes|yep|yeah|ok|okay|sure|fine|perfect|sounds good|available|i'?m free)\\b/i.test(threadL);
+      if ((day || clock) && accepted) return 'Agreed';
+      if (day || clock) return 'Proposed';
+      if (isMeetingIntent(source) || /\\b(invite|invitation|repay|pay|amount|₹)\\b/.test(source)) return 'Open';
+      return 'Open';
+    }
+
+    function formatKeyDetails(original, draft, threadText, goal) {
       const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
       const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
       const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
@@ -938,21 +945,31 @@ export const HTML = `<!doctype html>
         parts.push('Repayment: ' + (repay ? repay[0].trim() : 'Mentioned'));
       }
       if (where && !/^\\d/.test(where) && !/am|pm/i.test(where)) parts.push('Place: ' + where);
+      parts.push('Status: ' + detailStatus(original, draft, threadText, goal));
       return parts.join(' · ');
     }
 
-    function formatGoalMeta(original, draft, threadText) {
+    function formatGoalMeta(original, draft, threadText, goal) {
       const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
       const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
       const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
       const where = extractWhere(threadText) || extractWhere(draft) || extractWhere(original);
       const source = (original + ' ' + draft + ' ' + threadText).toLocaleLowerCase();
+      const status = detailStatus(original, draft, threadText, goal);
+      const bits = [];
       if (isMeetingIntent(source) || day || clock) {
-        return 'Date: ' + (day || 'Not specified') + (clock ? ' · Time: ' + clock : '');
+        bits.push('Date: ' + (day || 'Not specified'));
+        if (clock) bits.push('Time: ' + clock);
+        else bits.push('Time: Not specified');
+      } else if (amount) {
+        bits.push('Amount: ' + amount);
+      } else if (where && !/^\\d/.test(where) && !/am|pm/i.test(where)) {
+        bits.push('Place: ' + where);
+      } else {
+        bits.push('Date: Not specified');
       }
-      if (amount) return 'Amount: ' + amount;
-      if (where && !/^\\d/.test(where) && !/am|pm/i.test(where)) return 'Place: ' + where;
-      return 'Date: Not specified';
+      bits.push('Status: ' + status);
+      return bits.join(' · ');
     }
 
     function simplifyGoalLine(text) {
@@ -989,8 +1006,8 @@ export const HTML = `<!doctype html>
       const { original, draft } = intentSource(goal);
       const threadText = (goal.thread || []).filter(item => !item.deletedAt).map(item => item.text).join(' ');
       const reviewing = Boolean(goal.pendingDraft);
-      const rows = [['Goal', summarizeGoal(original, draft, threadText)]];
-      const details = formatKeyDetails(original, draft, threadText);
+      const rows = [['Goal', summarizeGoal(original, draft)]];
+      const details = formatKeyDetails(original, draft, threadText, goal);
       if (details) rows.push(['Key details', details]);
       rows.push(['Status', intentGoalStatus(goal)]);
       if (reviewing) {
@@ -1211,8 +1228,8 @@ export const HTML = `<!doctype html>
       }
       const { original, draft } = intentSource(goal);
       const threadText = (goal.thread || []).filter(item => !item.deletedAt).map(item => item.text).join(' ');
-      const goalText = simplifyGoalLine(summarizeGoal(original, draft, threadText));
-      const metaText = formatGoalMeta(original, draft, threadText);
+      const goalText = simplifyGoalLine(summarizeGoal(original, draft));
+      const metaText = formatGoalMeta(original, draft, threadText, goal);
       if (main) main.textContent = 'Goal: ' + goalText;
       if (meta) meta.textContent = metaText;
       topic.title = 'Goal: ' + goalText + '\\n' + metaText;
