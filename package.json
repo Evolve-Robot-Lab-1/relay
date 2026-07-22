@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "node tests/client-syntax.mjs && wrangler deploy --dry-run",
+    "test:goals": "node tests/goal-validation.mjs",
     "test:browser": "node tests/browser-e2e.mjs",
     "test:drafts": "node tests/draft-quality.mjs",
     "test:e2e": "node tests/e2e.mjs",

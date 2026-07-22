@@ -873,6 +873,64 @@ export const HTML = `<!doctype html>
         || /\\b(tmrw|tomorrow|today|tonight)\\b/.test(source);
     }
 
+    function latestMessageValue(messages, extractor) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const value = extractor(messages[index].text);
+        if (value) return value;
+      }
+      return '';
+    }
+
+    function scheduleState(goal) {
+      const messages = (goal?.thread || []).filter(item => !item.deletedAt);
+      const threadText = messages.map(item => item.text).join(' ');
+      const declined = /\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin|not free|busy)\\b/i.test(threadText);
+      const confirmRe = /\\b(yes|yep|yeah|sure|works(?:\\s+for\\s+me)?|that\\s+works|sounds\\s+good|perfect|confirmed|it'?s\\s+a\\s+deal|see\\s+you(?:\\s+then)?|i'?ll\\s+be\\s+there|fine\\s+with\\s+me|ok(?:ay)?(?:\\s+for\\s+me)?|yes\\s+that(?:\\s+time)?|locked\\s+in|done)\\b/i;
+      let proposal = null;
+      let agreed = false;
+
+      for (let index = 0; index < messages.length; index += 1) {
+        const message = messages[index];
+        const day = extractDay(message.text);
+        const clock = extractClock(message.text);
+        const confirms = confirmRe.test(message.text);
+
+        if (!day && !clock) {
+          if (proposal && message.from !== proposal.from && confirms) agreed = true;
+          continue;
+        }
+
+        const conflicts = Boolean(proposal && (
+          (day && proposal.day && day !== proposal.day)
+          || (clock && proposal.clock && clock !== proposal.clock)
+        ));
+        const addsDetail = Boolean(proposal && (
+          (day && !proposal.day)
+          || (clock && !proposal.clock)
+        ));
+        if (proposal && message.from !== proposal.from && confirms && !conflicts && !addsDetail) {
+          agreed = true;
+          continue;
+        }
+
+        proposal = {
+          from: message.from,
+          day: day || proposal?.day || '',
+          clock: clock || proposal?.clock || '',
+          index
+        };
+        agreed = false;
+      }
+
+      return {
+        status: declined ? 'Declined' : agreed ? 'Agreed' : proposal ? 'Proposed' : 'Open',
+        day: proposal?.day || latestMessageValue(messages, extractDay),
+        clock: proposal?.clock || latestMessageValue(messages, extractClock),
+        proposedBy: proposal?.from || null,
+        peerConfirmed: agreed
+      };
+    }
+
     function summarizeGoal(original, draft) {
       const draftL = String(draft || '').toLocaleLowerCase();
       const originalL = String(original || '').toLocaleLowerCase();
@@ -930,36 +988,13 @@ export const HTML = `<!doctype html>
       const messages = (goal?.thread || []).filter(item => !item.deletedAt);
       const threadL = messages.map(item => item.text).join(' ').toLocaleLowerCase() || String(threadText || '').toLocaleLowerCase();
       const source = (original + ' ' + draft + ' ' + threadL).toLocaleLowerCase();
-      const confirmRe = /\\b(works(?:\\s+for\\s+me)?|that\\s+works|sounds\\s+good|perfect|confirmed|it'?s\\s+a\\s+deal|see\\s+you(?:\\s+then)?|i'?ll\\s+be\\s+there|fine\\s+with\\s+me|ok(?:ay)?\\s+for\\s+me|yes\\s+that(?:\\s+time)?|locked\\s+in|done)\\b/i;
       if (goal?.status === 'closed' || result.status === 'closed' || goal?.status === 'cancelled') return 'Closed';
+      const schedule = scheduleState(goal);
+      if (schedule.status === 'Declined') return 'Declined';
       if (goal?.status === 'resolved' || ['confirmed', 'resolved'].includes(result.status)) {
-        if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin)/i.test(threadL)) return 'Declined';
         return 'Agreed';
       }
-      if (/\\b(not available|unavailable|can'?t make|cannot make|won'?t (?:be|work)|declin|not free|busy)\\b/i.test(threadL)) return 'Declined';
-
-      // Same message both proposes a time and confirms it (e.g. "Tomorrow at 10 am works").
-      for (const message of messages) {
-        if (extractClock(message.text) && confirmRe.test(message.text)) return 'Agreed';
-      }
-
-      // Time proposed by one side → Agreed only after the other side confirms.
-      let proposedBy = null;
-      let proposedAt = -1;
-      for (let i = 0; i < messages.length; i += 1) {
-        if (extractClock(messages[i].text)) {
-          proposedBy = messages[i].from;
-          proposedAt = i;
-          break;
-        }
-      }
-      if (proposedAt >= 0) {
-        for (let i = proposedAt + 1; i < messages.length; i += 1) {
-          const message = messages[i];
-          if (proposedBy && message.from === proposedBy) continue;
-          if (confirmRe.test(message.text)) return 'Agreed';
-        }
-      }
+      if (schedule.status !== 'Open') return schedule.status;
 
       const day = extractDay(threadL) || extractDay(draft) || extractDay(original);
       const clock = extractClock(threadL) || extractClock(draft) || extractClock(original);
@@ -969,8 +1004,9 @@ export const HTML = `<!doctype html>
     }
 
     function formatKeyDetails(original, draft, threadText, goal) {
-      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
-      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
+      const schedule = scheduleState(goal);
+      const day = schedule.day || extractDay(draft) || extractDay(original);
+      const clock = schedule.clock || extractClock(draft) || extractClock(original);
       const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
       const where = extractWhere(threadText) || extractWhere(draft) || extractWhere(original);
       const parts = [];
@@ -990,8 +1026,9 @@ export const HTML = `<!doctype html>
     }
 
     function formatGoalMeta(original, draft, threadText, goal) {
-      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
-      const clock = extractClock(threadText) || extractClock(draft) || extractClock(original);
+      const schedule = scheduleState(goal);
+      const day = schedule.day || extractDay(draft) || extractDay(original);
+      const clock = schedule.clock || extractClock(draft) || extractClock(original);
       const amount = extractAmount(threadText) || extractAmount(draft) || extractAmount(original);
       const where = extractWhere(threadText) || extractWhere(draft) || extractWhere(original);
       const source = (original + ' ' + draft + ' ' + threadText).toLocaleLowerCase();
@@ -1064,13 +1101,12 @@ export const HTML = `<!doctype html>
       const threadText = thread.map(item => item.text).join(' ');
       const source = (original + ' ' + draft + ' ' + threadText).toLocaleLowerCase();
       const rows = [];
-      const day = extractDay(threadText) || extractDay(draft) || extractDay(original);
-      const clockInThread = extractClock(threadText);
-      const clock = clockInThread || extractClock(draft) || extractClock(original);
+      const schedule = scheduleState(goal);
+      const day = schedule.day || extractDay(draft) || extractDay(original);
+      const clock = schedule.clock || extractClock(draft) || extractClock(original);
       const amount = extractAmount(threadText + ' ' + (result.summary || ''));
       const reached = ['confirmed', 'resolved', 'closed'].includes(result.status) || ['resolved', 'closed'].includes(goal.status);
       const peerReplied = thread.length >= 2;
-      const accepted = /\\b(yes|yep|yeah|works|available|ok|okay|sure|fine|perfect|sounds good)\\b/i.test(threadText);
 
       if (amount) {
         rows.push({
@@ -1083,11 +1119,11 @@ export const HTML = `<!doctype html>
       if (isMeetingIntent(source) || day || clock || result.date || result.time) {
         const dateValue = day || result.date || 'Not confirmed';
         rows.push({
-          mark: day || result.date ? 'confirmed' : 'open',
+          mark: schedule.peerConfirmed || reached ? 'confirmed' : (day || result.date ? 'proposed' : 'open'),
           label: 'Date',
           value: dateValue
         });
-        const timeConfirmed = Boolean(clockInThread || (clock && peerReplied && accepted) || (result.time && reached));
+        const timeConfirmed = Boolean((clock && schedule.peerConfirmed) || (result.time && reached));
         rows.push({
           mark: timeConfirmed ? 'confirmed' : (clock || result.time ? 'proposed' : 'open'),
           label: 'Time',
@@ -1100,7 +1136,7 @@ export const HTML = `<!doctype html>
       }
 
       if (reached) rows.push({ mark: 'confirmed', label: 'Goal', value: 'Solved' });
-      else if ((day || result.date) && (clockInThread || result.time) && peerReplied && accepted) {
+      else if ((day || result.date) && (clock || result.time) && schedule.peerConfirmed) {
         rows.push({ mark: 'proposed', label: 'Goal', value: 'Ready — mark resolved' });
       }
 

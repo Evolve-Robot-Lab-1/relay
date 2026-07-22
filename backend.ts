@@ -267,7 +267,9 @@ function conservativeToneFallback(previous: string, tone: string) {
     draft = draft.replace(/\s+and let me know\b/i, '. Tell me');
     draft = draft.replace(/\bLet me know\b/i, 'Tell me');
   } else if (tone === 'casual') {
-    if (/^Could you(?: please)?\s+/i.test(draft)) {
+    if (/^Meet\s+(.+?)[.!?]?$/i.test(draft)) {
+      draft = draft.replace(/^Meet\s+(.+?)[.!?]?$/i, 'How about meeting $1?');
+    } else if (/^Could you(?: please)?\s+/i.test(draft)) {
       draft = draft.replace(/^Could you(?: please)?\s+/i, 'Can you ');
     } else if (/^Please\s+/i.test(draft)) {
       draft = 'Can you ' + lowerInitial(draft.replace(/^Please\s+/i, ''));
@@ -638,7 +640,7 @@ export class RelayStore {
       representativeMode: { [profileId]: true },
       thread: [],
       privateNotes: [{ id: `N${randomHex(12)}`, ownerId: profileId, text: raw, createdAt: now }],
-      pendingDraft: { ownerId: profileId, draft: drafted.draft, noteId: null, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: now },
+      pendingDraft: { ownerId: profileId, draft: drafted.draft, draftHistory: { [tone]: drafted.draft }, noteId: null, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: now },
       result: { version: 0, summary: '', type: 'progress', requiresConfirmation: false, date: null, time: null, location: null, status: 'open', confirmations: {}, lockedAt: null },
       removedBy: [],
       createdAt: now,
@@ -773,8 +775,9 @@ export class RelayStore {
     if (!note) throw new Error('Original note not found.');
     const tone = TONES.has(message.tone) ? message.tone : goal.tone || 'professional';
     const peerId = goal.participants.find((id: string) => id !== profileId) || null;
-    const drafted = await this.makeDraft(profileId, peerId, note.text, tone, goal, pending.draft);
-    goal.pendingDraft = { ...pending, draft: drafted.draft, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: Date.now() };
+    const draftHistory = { ...(pending.draftHistory || {}), [pending.tone || goal.tone || 'professional']: pending.draft };
+    const drafted = await this.makeDraft(profileId, peerId, note.text, tone, goal, pending.draft, Object.values(draftHistory));
+    goal.pendingDraft = { ...pending, draft: drafted.draft, draftHistory: { ...draftHistory, [tone]: drafted.draft }, facts: drafted.facts, resultSummary: drafted.resultSummary, resultType: drafted.resultType, requiresConfirmation: drafted.requiresConfirmation, tone, createdAt: Date.now() };
     goal.tone = tone;
     goal.updatedAt = Date.now();
     await this.write(`goal:${goal.id}`, goal);
@@ -1177,7 +1180,7 @@ export class RelayStore {
     }
   }
 
-  async makeDraft(profileId: string, peerId: string | null, raw: string, tone: string, goal: any, previousDraft = '') {
+  async makeDraft(profileId: string, peerId: string | null, raw: string, tone: string, goal: any, previousDraft = '', referenceDrafts: string[] = []) {
     if (!this.groqApiKeys().length && !this.env.AI) throw new Error('Relay rewriting is temporarily unavailable. Your private message was not sent.');
     if (!this.allow(`ai:${profileId}`, 40, 60_000)) throw new Error('Please wait a moment before requesting another rewrite.');
     this.unavailableGroqKeys = new Set();
@@ -1220,6 +1223,19 @@ Examples of the desired transformation:
 
 Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When restyling an approval-card draft, make the selected tone clearly visible through diction and sentence structure, not by changing only one modal verb or deleting a word.`;
     const previous = cleanText(previousDraft);
+    const comparisons = [...new Set(referenceDrafts.map(value => cleanText(value)).filter(Boolean))];
+    const validatedFallback = () => {
+      const draft = conservativeToneFallback(previous, tone);
+      const tooSimilar = tone !== 'direct' && draft.length >= 24 && comparisons.some(reference => draftSimilarity(reference, draft) > 0.82);
+      if (!draft || draft.toLocaleLowerCase() === previous.toLocaleLowerCase() || tooSimilar || draftViolation(raw, draft) || toneViolation(tone, draft)) return null;
+      return {
+        draft,
+        resultSummary: cleanText(draft, 500),
+        resultType: 'progress',
+        requiresConfirmation: false,
+        facts: { date: null, time: null, location: null }
+      };
+    };
     const modelCount = this.rewriteModelCount();
     const modelPlan = [0, 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1), 0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1)];
     let lastViolation = '';
@@ -1263,11 +1279,15 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When
         }
         lastViolation = draftViolation(raw, draft);
         if (!lastViolation) lastViolation = toneViolation(tone, draft);
-        if (!lastViolation && tone !== 'direct' && previous && draft.length >= 24 && draftSimilarity(previous, draft) > 0.82) {
+        if (!lastViolation && tone !== 'direct' && draft.length >= 24 && comparisons.some(reference => draftSimilarity(reference, draft) > 0.82)) {
           lastViolation = 'The new draft is too similar to the previous draft for a visible tone change.';
         }
         if (lastViolation) {
           console.warn('Relay AI draft rejected:', lastViolation);
+          if (previous && attempt >= 1) {
+            const fallback = validatedFallback();
+            if (fallback) return fallback;
+          }
           continue;
         }
         return {
@@ -1286,16 +1306,8 @@ Selected tone: ${tone}. ${toneRule} Tone changes style only, never meaning. When
         else if (/daily free allocation|daily quota|quota exhausted|used up/i.test(lastViolation)) unavailableModels.add(modelIndex);
       }
     }
-    const fallback = conservativeToneFallback(previous, tone);
-    if (fallback && fallback.toLocaleLowerCase() !== previous.toLocaleLowerCase() && !draftViolation(raw, fallback) && !toneViolation(tone, fallback)) {
-      return {
-        draft: fallback,
-        resultSummary: cleanText(fallback, 500),
-        resultType: 'progress',
-        requiresConfirmation: false,
-        facts: { date: null, time: null, location: null }
-      };
-    }
+    const fallback = validatedFallback();
+    if (fallback) return fallback;
     throw new Error('Relay could not rewrite this message. Your private message was not sent. Please try again.');
   }
 
