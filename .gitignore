@@ -6,5 +6,7 @@ node_modules/
 !.env.example
 *.log
 .npx-cache/
+dist/
 server.ts.bak
 server.ts.mess
+video/output/

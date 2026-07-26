@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pricing — Relay</title>
+  <meta name="description" content="Relay Free, Pro, and Team plans. Free builds the daily writing habit; Pro and Team unlock with controlled rollout.">
+  <link rel="icon" type="image/png" href="/relay-mark.png">
+  <link rel="stylesheet" href="/css/marketing.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <a class="brand" href="/"><img src="/relay-mark.png" alt="">RELAY</a>
+      <nav class="nav">
+        <a href="/waitlist">Waitlist</a>
+        <a href="/partners">Partners</a>
+        <a href="/support">Support</a>
+      </nav>
+    </header>
+    <h1>Start free. Pro and Team are coming soon.</h1>
+    <p class="lead">Free builds the daily writing habit. Pro and Team unlock with a controlled rollout. Relay never sends for you on any plan.</p>
+    <div class="grid three">
+      <div class="card">
+        <p class="badge">Available now</p>
+        <h2>Free</h2>
+        <p class="price">$0 <span>/ forever</span></p>
+        <ul class="clean">
+          <li>40 compose / improve actions per day</li>
+          <li>WhatsApp, Gmail, LinkedIn, Slack, AI chats</li>
+          <li>Insert, Copy, tone, Undo</li>
+          <li>No message content stored by default</li>
+        </ul>
+        <a class="button primary" href="/waitlist">Get Free access</a>
+      </div>
+      <div class="card">
+        <p class="badge">Coming soon</p>
+        <h2>Pro</h2>
+        <p class="price">₹999 <span>/ month · about $12</span></p>
+        <ul class="clean">
+          <li>400 actions per day</li>
+          <li>Priority drafting capacity</li>
+          <li>Tone preference memory</li>
+          <li>Multi-device recovery</li>
+        </ul>
+        <a class="button secondary" href="/waitlist">Join waitlist for Pro</a>
+      </div>
+      <div class="card">
+        <p class="badge">For teams</p>
+        <h2>Team</h2>
+        <p class="price">From ₹1,699 <span>/ seat / month · about $20</span></p>
+        <ul class="clean">
+          <li>Shared style / approved phrases</li>
+          <li>Usage caps for SDR pods and agencies</li>
+          <li>Admin retention statement</li>
+          <li>No training on customer content</li>
+        </ul>
+        <p class="plan-note">Custom pricing for larger teams based on seats, usage, and admin needs.</p>
+        <a class="button secondary" href="/partners">Join the team pilot</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Have an invite or Pro code?</h2>
+      <form id="plan-form">
+        <label for="planCode">Invite / plan code</label>
+        <input id="planCode" maxlength="64" placeholder="RELAY-PRO-…" autocomplete="off">
+        <label for="clientId" style="margin-top:12px">Optional extension client id</label>
+        <input id="clientId" maxlength="128" placeholder="Leave blank to preview only">
+        <div class="cta-row">
+          <button class="primary" type="submit">Check plan</button>
+        </div>
+        <p id="plan-status" class="status" role="status"></p>
+      </form>
+    </div>
+    <footer>Billing and Team features unlock with a controlled rollout. <a href="/privacy">Privacy</a></footer>
+  </main>
+  <script>
+    document.getElementById('plan-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = document.getElementById('plan-status');
+      status.className = 'status';
+      status.textContent = 'Checking…';
+      try {
+        const response = await fetch('/api/plan', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            planCode: document.getElementById('planCode').value.trim(),
+            clientId: document.getElementById('clientId').value.trim()
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not check plan.');
+        status.className = 'status ok';
+        status.textContent = `${data.plan} plan · ${data.dailyLimit} actions/day · ${data.remaining} remaining today`;
+      } catch (error) {
+        status.className = 'status err';
+        status.textContent = error instanceof Error ? error.message : 'Could not check plan.';
+      }
+    });
+  </script>
+</body>
+</html>

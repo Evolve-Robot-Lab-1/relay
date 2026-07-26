@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Partners — Relay</title>
+  <meta name="description" content="Creator, cross-promo, cloud, and team partnership tracks for Relay’s global rollout.">
+  <link rel="icon" type="image/png" href="/relay-mark.png">
+  <link rel="stylesheet" href="/css/marketing.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <a class="brand" href="/"><img src="/relay-mark.png" alt="">RELAY</a>
+      <nav class="nav">
+        <a href="/waitlist">Waitlist</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/support">Support</a>
+      </nav>
+    </header>
+    <h1>Distribution partnerships</h1>
+    <p class="lead">We prioritize partners who put Relay where writing already happens—not feature mashups that weaken trust.</p>
+    <div class="grid two">
+      <div class="card">
+        <p class="badge">Tier 1</p>
+        <h2>Creators & communities</h2>
+        <ul class="clean">
+          <li>Remote work, ESL business English, freelancing, sales tips</li>
+          <li>Early access + featured reply packs</li>
+          <li>Affiliate / credit after Pro launch</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="badge">Tier 2</p>
+        <h2>Complementary extensions</h2>
+        <ul class="clean">
+          <li>Tab managers, meeting notetakers, CRM sidebars, email trackers</li>
+          <li>Changelog and onboarding cross-promo</li>
+          <li>No dating, legal, or medical advice partners</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="badge">Tier 3</p>
+        <h2>Cloud & platforms</h2>
+        <ul class="clean">
+          <li>Cloudflare Workers / startup ecosystem showcase</li>
+          <li>Model capacity partners for margin</li>
+          <li>Marketplace listings after Team admin exists</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="badge">Tier 4</p>
+        <h2>Team / agency</h2>
+        <ul class="clean">
+          <li>SDR pods and agency seats</li>
+          <li>Shared style guides later</li>
+          <li>Only after consumer habit is proven</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Partner interest</h2>
+      <form id="partner-form">
+        <label for="name">Name</label>
+        <input id="name" required maxlength="80" placeholder="Your name">
+        <label for="email" style="margin-top:12px">Email</label>
+        <input id="email" type="email" required maxlength="200" placeholder="you@company.com">
+        <label for="tier" style="margin-top:12px">Track</label>
+        <select id="tier" required>
+          <option value="creator">Creator / community</option>
+          <option value="cross_promo">Complementary extension</option>
+          <option value="cloud">Cloud / platform</option>
+          <option value="team">Team / agency</option>
+        </select>
+        <label for="note" style="margin-top:12px">How you’d distribute Relay</label>
+        <textarea id="note" maxlength="1000" placeholder="Audience size, channel, and proposed collaboration"></textarea>
+        <div class="cta-row">
+          <button class="primary" type="submit">Submit interest</button>
+          <a class="button secondary" href="/use/whatsapp">See reply packs</a>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </form>
+    </div>
+    <footer>Outreach templates live in <code>docs/PARTNERS.md</code>.</footer>
+  </main>
+  <script>
+    document.getElementById('partner-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = document.getElementById('status');
+      status.className = 'status';
+      status.textContent = 'Submitting…';
+      try {
+        const response = await fetch('/api/partners', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: document.getElementById('name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            tier: document.getElementById('tier').value,
+            note: document.getElementById('note').value.trim()
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not submit.');
+        status.className = 'status ok';
+        status.textContent = 'Thanks—we will follow up if there is a fit.';
+        event.target.reset();
+      } catch (error) {
+        status.className = 'status err';
+        status.textContent = error instanceof Error ? error.message : 'Could not submit.';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Get the Relay extension</title>
+  <meta name="description" content="Request and download the Relay context-aware communication copilot test build.">
+  <link rel="icon" type="image/png" href="/relay-mark.png">
+  <link rel="stylesheet" href="/css/marketing.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <a class="brand" href="/"><img src="/relay-mark.png" alt="">RELAY</a>
+      <nav class="nav">
+        <a href="/waitlist">Waitlist</a>
+        <a href="/support">Support</a>
+      </nav>
+    </header>
+    <p class="badge">Business test build</p>
+    <h1>Request Relay, then test it.</h1>
+    <p class="lead">Relay understands the user’s intent and the active conversation, then drafts the next message for review. It never sends or posts for you.</p>
+    <div class="card">
+      <form id="extension-request">
+        <label for="email">Work email</label>
+        <input id="email" name="email" type="email" required maxlength="200" placeholder="you@company.com" autocomplete="email">
+        <div class="row">
+          <div>
+            <label for="region">Region</label>
+            <select id="region" name="region" required>
+              <option value="south_asia">South Asia</option>
+              <option value="sea_apac">SEA / APAC</option>
+              <option value="americas">Americas</option>
+              <option value="europe">Europe</option>
+              <option value="africa_me">Africa / Middle East</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label for="sites">Where will you test Relay?</label>
+            <input id="sites" name="sites" maxlength="200" placeholder="WhatsApp, Gmail, LinkedIn">
+          </div>
+        </div>
+        <div class="cta-row">
+          <button class="primary" type="submit">Request test build</button>
+          <a class="button secondary" href="/use/whatsapp">See WhatsApp guide</a>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </form>
+      <div id="download-ready" hidden>
+        <p><strong>Your request is recorded.</strong> Download the production-connected test build below.</p>
+        <a id="download-link" class="button primary" href="/downloads/relay-extension.zip" download>Download Relay test build</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Install in Chrome</h2>
+      <ol class="clean">
+        <li>Download and unzip <code>relay-extension.zip</code>.</li>
+        <li>Open <code>chrome://extensions</code> and enable Developer mode.</li>
+        <li>Choose <strong>Load unpacked</strong> and select the unzipped <code>relay-extension</code> folder.</li>
+        <li>Refresh WhatsApp, Gmail, or another test site. Open Relay beside a writing field.</li>
+      </ol>
+    </div>
+    <footer>Your email is stored for test access and rollout support. Message content is not stored. <a href="/privacy">Privacy</a></footer>
+  </main>
+  <script>
+    const form = document.getElementById('extension-request');
+    const status = document.getElementById('status');
+    const downloadReady = document.getElementById('download-ready');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      status.className = 'status';
+      status.textContent = 'Recording your request…';
+      downloadReady.hidden = true;
+      const body = {
+        email: document.getElementById('email').value.trim(),
+        cohort: 'founder_freelancer',
+        region: document.getElementById('region').value,
+        sites: document.getElementById('sites').value.trim()
+      };
+      try {
+        const response = await fetch('/api/waitlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not record the request.');
+        status.className = 'status ok';
+        status.textContent = 'Access ready. Download the build and follow the install steps.';
+        downloadReady.hidden = false;
+      } catch (error) {
+        status.className = 'status err';
+        status.textContent = error instanceof Error ? error.message : 'Could not record the request.';
+      }
+    });
+  </script>
+</body>
+</html>

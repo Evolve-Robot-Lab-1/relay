@@ -1,19 +1,26 @@
 {
   "name": "agent-network",
   "version": "1.0.0",
-  "description": "Viral browser-based agent network - anonymous, instant, free",
+  "description": "Relay turns half-formed thoughts into clear messages without changing their meaning",
   "main": "server.ts",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node tests/client-syntax.mjs && wrangler deploy --dry-run",
+    "check": "node tests/client-syntax.mjs && node tests/quick-static.mjs && node tests/growth-static.mjs && wrangler deploy --dry-run",
+    "extension:package": "bash scripts/package-extension.sh",
+    "test:quick": "node tests/quick-static.mjs",
+    "test:quick:local": "node tests/quick-local.mjs",
+    "test:quick:production": "node tests/quick-production.mjs",
+    "test:quick:browser": "node tests/quick-browser.mjs",
+    "test:extension:browser": "node tests/extension-browser.mjs",
     "test:goals": "node tests/goal-validation.mjs",
     "test:browser": "node tests/browser-e2e.mjs",
     "test:drafts": "node tests/draft-quality.mjs",
     "test:e2e": "node tests/e2e.mjs",
+    "test:growth": "node tests/growth-static.mjs",
     "start": "wrangler dev"
   },
   "devDependencies": {
-    "wrangler": "^4.112.0"
+    "wrangler": "^4.114.0"
   }
 }

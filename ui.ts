@@ -17,6 +17,9 @@ export const HTML = `<!doctype html>
   <meta name="twitter:description" content="Your representative for difficult conversations.">
   <meta name="twitter:image" content="https://relay.durgaai.com/relay-social.png">
   <link rel="icon" type="image/png" href="/relay-mark.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#080a09">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Relay</title>
   <style>
     :root{--bg:#080a09;--panel:#101311;--panel2:#171b18;--line:#29302b;--text:#f3f6f4;--muted:#8d9891;--green:#00e982;--green2:#00b969;--red:#ff5a64;--amber:#f2bb49;--blue:#61a8ff;--radius:6px;--max:760px}
@@ -68,6 +71,36 @@ export const HTML = `<!doctype html>
     .empty-state{min-height:320px;display:grid;place-items:center;text-align:center;border-top:1px solid var(--line);padding:36px 16px}
     .empty-state strong{display:block;color:var(--text);font-size:16px}
     .empty-state p{max-width:340px;color:var(--muted);margin:8px auto 18px}
+    .quick-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #176d48;background:#0d1a14;color:inherit;text-decoration:none;border-radius:8px;padding:15px 16px;margin-bottom:18px}
+    .quick-entry:hover{border-color:var(--green2);background:#10251a}
+    .quick-entry strong{display:block;font-size:14px;color:var(--text)}
+    .quick-entry span{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+    .quick-entry-mark{color:var(--green);font-size:20px;font-weight:800;flex:0 0 auto}
+    .quick-view{max-width:640px;margin:0 auto}
+    .quick-back{display:inline-flex;color:var(--muted);text-decoration:none;font-size:12px;font-weight:700;margin:0 0 22px}
+    .quick-back:hover{color:var(--text)}
+    .quick-hero{margin:4px 0 24px}
+    .quick-hero h1{font-size:clamp(25px,6vw,38px);line-height:1.08;margin:0;max-width:560px}
+    .quick-hero p{color:var(--muted);font-size:15px;max-width:540px;margin:12px 0 0}
+    .quick-card{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:16px}
+    .quick-label{display:block;color:#cbd2cd;font-size:12px;font-weight:700;margin:0 0 7px}
+    .quick-audience{display:flex;gap:7px;margin-bottom:14px}
+    .quick-choice{height:34px;border:1px solid var(--line);background:#090b0a;color:var(--muted);border-radius:4px;padding:0 12px;font-size:12px;font-weight:700}
+    .quick-choice.active{border-color:var(--green);background:#102d20;color:var(--green)}
+    .quick-input{min-height:150px;font-size:16px;line-height:1.5}
+    .quick-submit-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+    .quick-submit-row .privacy-note{margin:0;max-width:330px}
+    .quick-result{border:1px solid #176d48;background:#0d1a14;border-radius:8px;padding:16px;margin-top:14px}
+    .quick-result textarea{min-height:130px;background:#08100c;border-color:#24553d;font-size:15px;line-height:1.5}
+    .quick-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+    .quick-result-head strong{color:var(--green);font-size:12px;text-transform:uppercase}
+    .quick-status{color:var(--muted);font-size:11px;min-height:16px}
+    .quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .quick-original{margin-top:12px;border-top:1px solid #244234;padding-top:10px;color:var(--muted);font-size:12px}
+    .quick-original summary{cursor:pointer;color:#aab5ae;font-weight:700}
+    .quick-original p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}
+    .quick-deeper{border-top:1px solid var(--line);margin-top:18px;padding-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .quick-deeper span{color:var(--muted);font-size:12px}
     .starter-list{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:360px;margin:0 auto 18px}
     .starter-chip{height:32px;border:1px solid #2a322e;background:transparent;color:#8d9891;border-radius:4px;padding:0 10px;font-size:12px;font-weight:500}
     .starter-chip:hover{border-color:#3d4a42;background:#121614;color:#c6cec8}
@@ -211,14 +244,54 @@ export const HTML = `<!doctype html>
     .representative-toggle.off{border-color:var(--line);background:#101211;color:var(--muted)}
     .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#252b27;color:#fff;border:1px solid #465049;border-radius:var(--radius);padding:10px 14px;z-index:20;max-width:min(90vw,460px);box-shadow:0 10px 35px #000a}
     .blocked-row{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
-    @media(max-width:600px){.shell{padding:10px 12px 84px}.brand{font-size:20px}.tagline{font-size:11px}.name-banner{grid-template-columns:1fr;gap:10px}.name-banner-form{grid-template-columns:minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.conversation-row{grid-template-columns:minmax(0,1fr) auto}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}}
+    @media(max-width:600px){.shell{padding:10px 12px 84px}.brand{font-size:20px}.tagline{font-size:11px}.name-banner{grid-template-columns:1fr;gap:10px}.name-banner-form{grid-template-columns:minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:flex-start}.conversation-row{grid-template-columns:minmax(0,1fr) auto}.protect{grid-template-columns:1fr}.convo-head{grid-template-columns:1fr}.convo-actions{justify-content:flex-start}.message{max-width:92%}.tone-options{grid-template-columns:1fr 1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1}.fab{right:18px;bottom:18px}.quick-card,.quick-result{padding:13px}.quick-submit-row,.quick-deeper{align-items:stretch;flex-direction:column}.quick-submit-row .primary,.quick-deeper .secondary{width:100%}.quick-input{min-height:170px}}
+    .header-actions{display:flex;align-items:center;gap:10px}
+    .header-nav{display:flex;align-items:center;gap:14px}
+    .header-nav a{color:var(--muted);font-size:12px;font-weight:700;text-decoration:none}
+    .header-nav a:hover{color:var(--text)}
+    .install-btn{height:36px;border:1px solid var(--green2);background:#0d1a14;color:var(--green);font-weight:800;font-size:12px;padding:0 12px;border-radius:var(--radius);display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+    .install-btn:hover{background:#10251a;border-color:var(--green)}
+    .improve-hero{margin:10px 0 20px}
+    .improve-hero h1{font-size:clamp(28px,5vw,38px);line-height:1.05;letter-spacing:-.025em;margin:0;max-width:560px}
+    .improve-hero p{color:#9ba69f;font-size:15px;margin:10px 0 0;max-width:540px}
+    .improve-card{border:1px solid #334039;background:linear-gradient(145deg,#121713 0%,#0e1210 100%);border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 18px 48px #0004}
+    .improve-card:focus-within{border-color:#237c55;box-shadow:0 18px 48px #0005,0 0 0 1px #00e98218}
+    .improve-card textarea{min-height:142px;font-size:16px;line-height:1.55;background:#090c0a;border-color:#313b35;padding:14px}
+    .improve-card textarea::placeholder{color:#657169}
+    .improve-card.has-result textarea{min-height:76px;height:76px}
+    .improve-helper{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#77827b;font-size:11px;margin-top:8px}
+    .improve-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin-top:14px}
+    .tone-select{width:auto;min-width:0;height:44px;border:1px solid var(--line);background:#090b0a;color:var(--text);border-radius:8px;padding:0 12px;font-size:13px}
+    #improve-submit{height:44px;border-radius:8px;padding:0 20px}
+    .improve-result{border:1px solid #176d48;background:#0d1a14;border-radius:10px;padding:10px 14px;margin-top:10px}
+    .improve-result textarea{min-height:52px;max-height:112px;background:#08100c;border-color:#24553d;font-size:15px;line-height:1.5;resize:vertical}
+    .improve-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .improve-actions .primary,.improve-actions .secondary{height:36px}
+    .improve-result .quick-original{display:none}
+    .utility-row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:10px;margin:14px 0 22px}
+    .plan-status{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);background:#0d100e;border-radius:8px;padding:11px 12px;margin:0;font-size:11px;color:var(--muted)}
+    .plan-status strong{color:var(--text);font-weight:700}
+    .plan-status a{color:var(--green);font-weight:700;text-decoration:none}
+    .extension-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #1b4b35;background:#0c140f;border-radius:8px;padding:11px 12px;margin:0;font-size:11px;color:var(--muted)}
+    .extension-banner strong{color:var(--text)}
+    .extension-banner a{color:var(--green);font-weight:700;text-decoration:none}
+    @media(max-width:700px){.utility-row{grid-template-columns:1fr}}
+    @media(max-width:600px){.header-nav .header-link{display:none}.improve-card{padding:15px}.improve-row{grid-template-columns:1fr}.tone-select,#improve-submit{width:100%}.improve-helper span:last-child{display:none}}
   </style>
 </head>
 <body>
   <main class="shell">
     <header>
       <div class="brand-group"><img class="brand-logo" src="/relay-mark.png" alt=""><div class="header-copy"><div class="brand">RELAY</div><div id="tagline" class="tagline">say it better.</div></div><span id="connection" class="sr-only" aria-live="polite">Connecting</span></div>
-      <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 0 0-16 0"></path></svg></button>
+      <div class="header-actions">
+        <nav class="header-nav">
+          <a class="header-link" href="#improve" data-action="focus-improve">Improve</a>
+          <a class="header-link" href="#conversations" data-action="focus-conversations">Conversations</a>
+          <a class="header-link" href="/pricing">Pricing</a>
+          <a class="install-btn" href="/extension">Install Extension</a>
+        </nav>
+        <button id="profile-button" class="icon-btn" type="button" title="Profile and recovery" aria-label="Profile and recovery"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 0 0-16 0"></path></svg></button>
+      </div>
     </header>
 
     <section id="name-banner" class="name-banner hidden" aria-labelledby="name-banner-title">
@@ -231,6 +304,45 @@ export const HTML = `<!doctype html>
         <div><strong>Protect your profile</strong><span>Keep your conversations and contacts when you change devices.</span></div>
         <button class="primary" type="button" data-action="open-profile">View recovery code</button>
       </div>
+      <div class="improve-hero">
+        <h1>Say it better.</h1>
+        <p>Write naturally. Relay makes it clear before you send.</p>
+      </div>
+      <div class="improve-card" id="improve">
+        <label class="quick-label" for="improve-input">What do you want to say?</label>
+        <textarea id="improve-input" class="quick-input" maxlength="4000" placeholder="Type or paste your message here..."></textarea>
+        <div class="improve-helper"><span>Relay keeps your meaning—just clearer.</span><span>Ctrl + Enter to improve</span></div>
+        <div class="improve-row">
+          <select id="improve-tone" class="tone-select" aria-label="Tone">
+            <option value="natural">Tone: Natural</option>
+            <option value="professional">Tone: Professional</option>
+            <option value="friendly">Tone: Friendly</option>
+            <option value="direct">Tone: Direct</option>
+            <option value="casual">Tone: Casual</option>
+          </select>
+          <button id="improve-submit" class="primary" type="button" data-action="improve-message">Improve message</button>
+        </div>
+      </div>
+      <div id="improve-result" class="improve-result hidden" aria-live="polite">
+        <div class="quick-result-head"><strong>Ready to send</strong><span id="improve-status" class="quick-status"></span></div>
+        <label class="sr-only" for="improve-output">Relay's improved message</label>
+        <textarea id="improve-output" maxlength="4000"></textarea>
+        <div class="improve-actions">
+          <button class="primary" type="button" data-action="improve-copy">Copy</button>
+          <button class="secondary" type="button" data-action="improve-reset">New message</button>
+        </div>
+        <details class="quick-original"><summary>Original message</summary><p id="improve-original"></p></details>
+      </div>
+      <div class="utility-row">
+        <div class="plan-status">
+          <span><strong id="plan-name">Free plan</strong> · <span id="plan-remaining">40</span>/<span id="plan-limit">40</span> actions</span>
+          <a href="/pricing">Plans</a>
+        </div>
+        <div class="extension-banner">
+          <span><strong>Write anywhere.</strong> Add Relay to WhatsApp, Gmail, LinkedIn, and AI chats.</span>
+          <a href="/extension">Install →</a>
+        </div>
+      </div>
       <div class="home-tabs"><button id="home-conversations-tab" class="home-tab active" type="button" data-action="set-home-tab" data-tab="conversations"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path></svg>Conversations</button><button id="home-contacts-tab" class="home-tab" type="button" data-action="set-home-tab" data-tab="contacts"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Contacts</button></div>
       <section id="home-conversations-panel" class="section">
         <div class="section-head"><h1 class="section-title">Active conversations</h1><button id="manage-conversations-button" class="text-btn hidden" type="button" data-action="toggle-manage">Manage</button></div>
@@ -241,6 +353,29 @@ export const HTML = `<!doctype html>
         <div id="contact-list" class="list"></div>
       </section>
       <button id="home-fab" class="fab hidden" type="button" data-action="open-create" title="Start a new conversation" aria-label="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+    </section>
+
+    <section id="quick-view" class="view quick-view" hidden>
+      <a class="quick-back" href="/">← Relay conversations</a>
+      <div class="quick-hero"><h1>Say it your way. Relay makes it clear.</h1><p>Write naturally—even if your thought is incomplete. Relay improves the message without changing what you mean.</p><p style="margin-top:14px"><a href="/waitlist" style="color:var(--green);font-weight:800;text-decoration:none">Get the extension →</a> · <a href="/use/whatsapp" style="color:var(--muted);font-weight:700;text-decoration:none">WhatsApp guide</a></p></div>
+      <div class="quick-card">
+        <span class="quick-label">Who is this for?</span>
+        <div id="quick-audience" class="quick-audience" role="group" aria-label="Message recipient">
+          <button class="quick-choice active" type="button" data-action="quick-audience" data-audience="ai" aria-pressed="true">An AI</button>
+          <button class="quick-choice" type="button" data-action="quick-audience" data-audience="person" aria-pressed="false">A person</button>
+        </div>
+        <label class="quick-label" for="quick-input">What are you trying to say?</label>
+        <textarea id="quick-input" class="quick-input" maxlength="4000" placeholder="Write it as it comes to you..."></textarea>
+        <div class="quick-submit-row"><p class="privacy-note">Nothing is sent for you. Quick messages are not saved.</p><button id="quick-submit" class="primary" type="button" data-action="quick-refine">Relay this</button></div>
+      </div>
+      <section id="quick-result" class="quick-result hidden" aria-live="polite">
+        <div class="quick-result-head"><strong>Ready to send</strong><span id="quick-status" class="quick-status"></span></div>
+        <label class="sr-only" for="quick-output">Relay's improved message</label>
+        <textarea id="quick-output" maxlength="4000"></textarea>
+        <div class="quick-actions"><button class="primary" type="button" data-action="quick-copy">Copy</button><button class="secondary" type="button" data-action="quick-reset">New message</button></div>
+        <details class="quick-original"><summary>Original message</summary><p id="quick-original"></p></details>
+        <div class="quick-deeper"><span>Need help with the whole conversation?</span><button class="secondary" type="button" data-action="quick-conversation">Start a private Relay</button></div>
+      </section>
     </section>
 
     <section id="invite-stage" class="view invite-stage" hidden aria-hidden="true">
@@ -368,9 +503,10 @@ export const HTML = `<!doctype html>
   <script nonce="__NONCE__">
   (() => {
     'use strict';
+    const pathQuick = /^\\/write\\/?$/.test(location.pathname);
     const pathInvite = /^\\/i\\/([A-Za-z0-9_-]{22})\\/?$/.exec(location.pathname)?.[1] || null;
     const pathGoal = /^\\/c\\/(G[0-9a-f]{32})\\/?$/i.exec(location.pathname)?.[1] || null;
-    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: pathInvite || new URLSearchParams(location.search).get('invite'), openGoalId: pathGoal || sessionStorage.getItem('relayOpenGoal') || '', inviteClaiming: false, homeTab: 'conversations', previewShared: false, welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false, shareUrl: '', editDraftText: '', lastFailedAction: null, progressOpen: false, moreOpen: false };
+    const state = { recovery: localStorage.getItem('relayRecovery') || '', profile: null, threads: [], contacts: [], blocks: [], goal: null, ws: null, reconnectTimer: null, invite: pathInvite || new URLSearchParams(location.search).get('invite'), openGoalId: pathGoal || sessionStorage.getItem('relayOpenGoal') || '', inviteClaiming: false, homeTab: 'conversations', previewShared: false, welcomed: false, toneUpdating: false, toneNotice: '', replySending: false, managingThreads: false, nameSaving: false, shareUrl: '', editDraftText: '', lastFailedAction: null, progressOpen: false, moreOpen: false, quickAudience: 'ai', quickBusy: false, quickOriginal: '', quickDraft: '', improveTone: 'natural', improveBusy: false, improveOriginal: '', improveDraft: '', plan: null };
     const byId = id => document.getElementById(id);
     const statusLabels = { draft:'Draft', waiting:'Waiting', active:'Active', confirming:'Confirming', resolved:'Goal reached', closed:'Closed', completed:'Closed', cancelled:'Closed' };
     const toneDescriptions = {
@@ -390,6 +526,10 @@ export const HTML = `<!doctype html>
     function friendlyError(raw, action) {
       const text = String(raw || '');
       const lower = text.toLocaleLowerCase();
+      if (action === 'quick-refine') {
+        if (/wait|too many|rate/.test(lower)) return 'Relay is busy. Wait a moment and try again.';
+        return 'Relay could not improve this message. Try again.';
+      }
       if (/invite|expired|invalid|already claimed|unavailable|not found/.test(lower)) return 'Invite expired. Ask for a new link.';
       if (/offline|connecting|websocket|network|disconnect/.test(lower)) return 'Participant disconnected. Try again.';
       if (/rewrite|understand|draft|could not|unavailable/.test(lower) || action === 'create-goal' || action === 'redraft') return 'Relay could not understand the intent. Try again.';
@@ -455,7 +595,7 @@ export const HTML = `<!doctype html>
 
     async function api(path, options = {}) {
       const headers = new Headers(options.headers || {});
-      if (state.recovery) headers.set('authorization', 'Bearer ' + state.recovery);
+      if (state.recovery && path !== '/api/refine') headers.set('authorization', 'Bearer ' + state.recovery);
       if (options.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
       const response = await fetch(path, { ...options, headers });
       const data = await response.json().catch(() => ({}));
@@ -474,6 +614,16 @@ export const HTML = `<!doctype html>
     }
 
     async function start() {
+      if (pathQuick) {
+        byId('home-view').hidden = true;
+        byId('conversation-view').hidden = true;
+        byId('invite-stage').hidden = true;
+        byId('quick-view').hidden = false;
+        byId('profile-button').classList.add('hidden');
+        byId('connection').textContent = 'Quick Relay';
+        renderQuickAudience();
+        return;
+      }
       if (!state.recovery) {
         try { await createProfile(false); }
         catch (error) {
@@ -499,7 +649,10 @@ export const HTML = `<!doctype html>
       connection.classList.remove('offline');
       const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
       state.ws = socket;
-      socket.addEventListener('open', () => socket.send(JSON.stringify({ type:'init', recoveryCode:state.recovery })));
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify({ type:'init', recoveryCode:state.recovery }));
+        if (!pathQuick) fetchPlanStatus();
+      });
       socket.addEventListener('message', event => handleMessage(JSON.parse(event.data)));
       socket.addEventListener('close', () => {
         state.welcomed = false;
@@ -625,6 +778,133 @@ export const HTML = `<!doctype html>
       renderInviteEntry();
       claimPendingInvite();
       restoreOpenGoal();
+      const quickTransfer = sessionStorage.getItem('relayQuickToConversation');
+      if (quickTransfer && !state.invite && !state.goal) {
+        sessionStorage.removeItem('relayQuickToConversation');
+        openCreate('', quickTransfer);
+      }
+    }
+
+    function quickClientId() {
+      let value = localStorage.getItem('relayQuickClient') || '';
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(value)) {
+        value = 'Q' + crypto.randomUUID().replace(/-/g, '');
+        localStorage.setItem('relayQuickClient', value);
+      }
+      return value;
+    }
+
+    function renderQuickAudience() {
+      byId('quick-audience').querySelectorAll('[data-audience]').forEach(button => {
+        const selected = button.dataset.audience === state.quickAudience;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+    }
+
+    async function refineQuick() {
+      const input = byId('quick-input');
+      const text = input.value.trim();
+      if (!text) return toast('Write what you are trying to say.');
+      if (state.quickBusy) return;
+      state.quickBusy = true;
+      const button = byId('quick-submit');
+      button.disabled = true;
+      button.textContent = 'Relaying...';
+      byId('quick-result').classList.add('hidden');
+      try {
+        const result = await api('/api/refine', {
+          method: 'POST',
+          body: JSON.stringify({ text, audience: state.quickAudience, tone: 'preserve', clientId: quickClientId() })
+        });
+        if (result.needsClarification) {
+          toast(result.clarification || 'Add the main point or desired outcome.');
+          input.focus();
+          return;
+        }
+        state.quickOriginal = text;
+        state.quickDraft = result.draft;
+        byId('quick-output').value = result.draft;
+        byId('quick-original').textContent = text;
+        byId('quick-status').textContent = 'Meaning preserved';
+        byId('quick-result').classList.remove('hidden');
+        byId('quick-output').focus();
+        byId('quick-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (error) {
+        toast(friendlyError(error.message, 'quick-refine'));
+      } finally {
+        state.quickBusy = false;
+        button.disabled = false;
+        button.textContent = 'Relay this';
+      }
+    }
+
+    async function refineImprove() {
+      const input = byId('improve-input');
+      const text = input.value.trim();
+      if (!text) return toast('Write what you want to say.');
+      if (state.improveBusy) return;
+      state.improveBusy = true;
+      const button = byId('improve-submit');
+      button.disabled = true;
+      button.textContent = 'Improving...';
+      byId('improve-result').classList.add('hidden');
+      try {
+        const tone = state.improveTone === 'natural' ? 'preserve' : state.improveTone;
+        const result = await api('/api/refine', {
+          method: 'POST',
+          body: JSON.stringify({ text, audience: 'person', tone, clientId: quickClientId() })
+        });
+        if (result.needsClarification) {
+          toast(result.clarification || 'Add the main point or desired outcome.');
+          input.focus();
+          return;
+        }
+        state.improveOriginal = text;
+        state.improveDraft = result.draft;
+        byId('improve-output').value = result.draft;
+        byId('improve-original').textContent = text;
+        byId('improve-status').textContent = 'Meaning preserved';
+        byId('improve-result').classList.remove('hidden');
+        byId('improve').classList.add('has-result');
+        const output = byId('improve-output');
+        output.style.height = 'auto';
+        output.style.height = Math.min(Math.max(output.scrollHeight, 52), 112) + 'px';
+        output.focus();
+        byId('improve-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (typeof result.remaining === 'number' && typeof result.dailyLimit === 'number') {
+          state.plan = { plan: result.plan || state.plan?.plan || 'free', dailyLimit: result.dailyLimit, remaining: result.remaining };
+          renderPlanStatus();
+        }
+      } catch (error) {
+        toast(friendlyError(error.message, 'quick-refine'));
+      } finally {
+        state.improveBusy = false;
+        button.disabled = false;
+        button.textContent = 'Improve message';
+      }
+    }
+
+    function renderPlanStatus() {
+      if (!state.plan) return;
+      byId('plan-name').textContent = capitalizePlan(state.plan.plan) + ' plan';
+      byId('plan-remaining').textContent = String(state.plan.remaining);
+      byId('plan-limit').textContent = String(state.plan.dailyLimit);
+    }
+
+    function capitalizePlan(plan) {
+      const value = String(plan || 'free');
+      return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    async function fetchPlanStatus() {
+      try {
+        const result = await api('/api/plan', { method: 'POST', body: JSON.stringify({}) });
+        if (result && typeof result.remaining === 'number') {
+          state.plan = { plan: result.plan || 'free', dailyLimit: result.dailyLimit, remaining: result.remaining };
+          renderPlanStatus();
+        }
+      } catch { /* silent — status line stays at default */ }
     }
 
     function renderHome() {
@@ -701,14 +981,7 @@ export const HTML = `<!doctype html>
       if (!state.threads.length) {
         const empty = node('div', 'empty-state');
         const content = node('div');
-        content.append(node('strong', '', 'No conversations yet.'), node('p', '', 'Need help saying something? Start here.'));
-        const starters = node('div', 'starter-list');
-        conversationStarters.forEach(([label, text]) => {
-          const chip = actionButton(label, 'use-starter', 'starter-chip');
-          chip.dataset.starter = text;
-          starters.append(chip);
-        });
-        content.append(starters);
+        content.append(node('strong', '', 'No conversations yet.'), node('p', '', 'Improve a message above or start a new conversation.'));
         const start = actionButton('Start a conversation', 'open-create', 'primary');
         content.append(start); empty.append(content); list.append(empty); return;
       }
@@ -1486,6 +1759,28 @@ export const HTML = `<!doctype html>
       const target = event.target.closest('[data-action]');
       if (!target) return;
       const action = target.dataset.action;
+      if (action === 'quick-audience') {
+        state.quickAudience = target.dataset.audience === 'person' ? 'person' : 'ai';
+        renderQuickAudience();
+        return;
+      }
+      if (action === 'quick-refine') return refineQuick();
+      if (action === 'quick-copy') return copyText(byId('quick-output').value, 'Improved message copied.');
+      if (action === 'quick-reset') {
+        state.quickOriginal = '';
+        state.quickDraft = '';
+        byId('quick-input').value = '';
+        byId('quick-output').value = '';
+        byId('quick-result').classList.add('hidden');
+        byId('quick-input').focus();
+        return;
+      }
+      if (action === 'quick-conversation') {
+        const message = state.quickOriginal || byId('quick-input').value.trim();
+        if (message) sessionStorage.setItem('relayQuickToConversation', message);
+        location.href = '/';
+        return;
+      }
       if (action === 'open-create') return openCreate();
       if (action === 'use-starter') {
         openCreate('', target.dataset.starter || '');
@@ -1500,6 +1795,18 @@ export const HTML = `<!doctype html>
       }
       if (action === 'set-home-tab') { state.homeTab = target.dataset.tab; renderHome(); return; }
       if (action === 'toggle-manage') { state.managingThreads = !state.managingThreads; renderHome(); return; }
+      if (action === 'improve-message') return refineImprove();
+      if (action === 'improve-copy') return copyText(byId('improve-output').value, 'Improved message copied.');
+      if (action === 'improve-reset') {
+        byId('improve-input').value = '';
+        byId('improve-result').classList.add('hidden');
+        byId('improve').classList.remove('has-result');
+        byId('improve-output').style.height = '';
+        byId('improve-input').focus();
+        return;
+      }
+      if (action === 'focus-improve') { state.homeTab = 'conversations'; renderHome(); setTimeout(() => byId('improve-input').focus(), 30); return; }
+      if (action === 'focus-conversations') { state.homeTab = 'conversations'; renderHome(); setTimeout(() => byId('thread-list').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); return; }
       if (action === 'message-contact') return openCreate(target.dataset.contactId);
       if (action === 'go-home') { closeMenus(); state.progressOpen = false; return goHome(); }
       if (action === 'toggle-more-menu') {
@@ -1604,6 +1911,9 @@ export const HTML = `<!doctype html>
     });
 
     byId('reply-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('[data-action="draft-reply"]').click(); } });
+    byId('quick-input').addEventListener('keydown', event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); refineQuick(); } });
+    byId('improve-input').addEventListener('keydown', event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); refineImprove(); } });
+    byId('improve-tone').addEventListener('change', event => { state.improveTone = event.target.value; });
     byId('new-message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('create-button').click(); } });
     byId('onboarding-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); byId('save-onboarding-name').click(); } });
     byId('invite-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); byId('join-conversation-button').click(); } });

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Waitlist — Relay</title>
+  <meta name="description" content="Join the global Relay invite cohorts for WhatsApp, Gmail, LinkedIn, and AI chat writing.">
+  <link rel="icon" type="image/png" href="/relay-mark.png">
+  <link rel="stylesheet" href="/css/marketing.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <a class="brand" href="/"><img src="/relay-mark.png" alt="">RELAY</a>
+      <nav class="nav">
+        <a href="/pricing">Pricing</a>
+        <a href="/use/whatsapp">Use cases</a>
+        <a href="/support">Support</a>
+      </nav>
+    </header>
+    <p class="badge">Global controlled rollout</p>
+    <h1>Know what to say. Anywhere on the web.</h1>
+    <p class="lead">Join an invite cohort. Relay drafts clearer replies and prompts inside WhatsApp, Gmail, LinkedIn, Slack, and AI chats—you approve Insert or Copy. Relay never sends.</p>
+    <div class="card">
+      <form id="waitlist-form">
+        <label for="email">Work email</label>
+        <input id="email" name="email" type="email" required maxlength="200" placeholder="you@company.com" autocomplete="email">
+        <div class="row">
+          <div>
+            <label for="cohort">Cohort</label>
+            <select id="cohort" name="cohort" required>
+              <option value="non_native_pro">Non-native English professional</option>
+              <option value="founder_freelancer">Founder / freelancer</option>
+              <option value="sdr_sales">SDR / outbound sales</option>
+              <option value="other">Other global remote</option>
+            </select>
+          </div>
+          <div>
+            <label for="region">Region</label>
+            <select id="region" name="region" required>
+              <option value="americas">Americas</option>
+              <option value="europe">Europe</option>
+              <option value="africa_me">Africa / Middle East</option>
+              <option value="south_asia">South Asia</option>
+              <option value="sea_apac">SEA / APAC</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div>
+            <label for="sites">Primary sites (optional)</label>
+            <input id="sites" name="sites" maxlength="200" placeholder="WhatsApp, Gmail, LinkedIn">
+          </div>
+        </div>
+        <div class="cta-row">
+          <button class="primary" type="submit">Request invite</button>
+          <a class="button secondary" href="/write">Try Quick Relay</a>
+        </div>
+        <p id="status" class="status" role="status"></p>
+        <p class="status">We only store your email, cohort, and region—not message content. <a href="/privacy">Privacy</a></p>
+      </form>
+    </div>
+    <div class="grid three">
+      <div class="card"><strong>Cohort A</strong><p class="lead" style="margin:8px 0 0;font-size:14px">Non-native English pros on WhatsApp + Gmail + LinkedIn</p></div>
+      <div class="card"><strong>Cohort B</strong><p class="lead" style="margin:8px 0 0;font-size:14px">Founders and freelancers writing client proposals and DMs</p></div>
+      <div class="card"><strong>Cohort C</strong><p class="lead" style="margin:8px 0 0;font-size:14px">SDR / outbound reps on Gmail + LinkedIn</p></div>
+    </div>
+    <footer>Relay · English-first global rollout · <a href="/partners">Partners</a></footer>
+  </main>
+  <script>
+    const form = document.getElementById('waitlist-form');
+    const status = document.getElementById('status');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      status.className = 'status';
+      status.textContent = 'Submitting…';
+      const body = {
+        email: document.getElementById('email').value.trim(),
+        cohort: document.getElementById('cohort').value,
+        region: document.getElementById('region').value,
+        sites: document.getElementById('sites').value.trim()
+      };
+      try {
+        const response = await fetch('/api/waitlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not join the waitlist.');
+        status.className = 'status ok';
+        status.textContent = data.inviteCode
+          ? `You're in. Save your invite code: ${data.inviteCode}`
+          : 'You're on the list. We will email your invite as cohort seats open.';
+        form.reset();
+      } catch (error) {
+        status.className = 'status err';
+        status.textContent = error instanceof Error ? error.message : 'Could not join the waitlist.';
+      }
+    });
+  </script>
+</body>
+</html>

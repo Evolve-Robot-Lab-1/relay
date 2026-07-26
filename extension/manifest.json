@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Relay — Know what to say",
+  "version": "1.0.0",
+  "description": "Know what to say on WhatsApp, Gmail, LinkedIn, and AI chats. You review every draft—Relay never sends.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://192.168.1.16:8787/*",
+    "https://relay.durgaai.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Relay",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "homepage_url": "https://relay.durgaai.com"
+}

@@ -1,0 +1,103 @@
+1
+00:00:00,500 --> 00:00:04,650
+Relay helps people have the conversations they avoid—
+
+2
+00:00:04,650 --> 00:00:10,250
+asking for money, arranging a meeting,
+or declining politely—
+
+3
+00:00:10,250 --> 00:00:14,050
+without giving up control.
+
+4
+00:00:14,538 --> 00:00:17,850
+A user privately says what they want.
+
+5
+00:00:17,850 --> 00:00:21,350
+Relay understands the goal,
+drafts a clear message,
+
+6
+00:00:21,350 --> 00:00:24,050
+and waits for approval
+before anything is shared.
+
+7
+00:00:24,527 --> 00:00:26,150
+Watch a real flow.
+
+8
+00:00:26,150 --> 00:00:29,150
+I want to set up a meeting tomorrow.
+
+9
+00:00:29,150 --> 00:00:33,650
+Relay turns that into a clean message,
+I pick a tone, and I approve it.
+
+10
+00:00:33,650 --> 00:00:36,250
+Then I share a secure invite link.
+
+11
+00:00:36,711 --> 00:00:39,650
+The other person joins and replies.
+
+12
+00:00:39,650 --> 00:00:45,450
+Relay keeps private notes private—
+only I see what I actually typed.
+
+13
+00:00:45,450 --> 00:00:51,650
+When we settle on a time, the goal updates live:
+date, time, and status—
+
+14
+00:00:51,650 --> 00:00:55,500
+proposed until both sides agree,
+then agreed.
+
+15
+00:00:55,999 --> 00:01:01,100
+Nothing is treated as a commitment
+until it is confirmed.
+
+16
+00:01:01,100 --> 00:01:03,550
+Silence is not yes.
+
+17
+00:01:03,550 --> 00:01:06,300
+A suggestion is not an agreement.
+
+18
+00:01:06,746 --> 00:01:13,350
+I built Relay with Codex—the conversation state model,
+invite flow, and real-time chat,
+
+19
+00:01:13,350 --> 00:01:19,200
+and the privacy boundary
+between intent and shared messages.
+
+20
+00:01:19,200 --> 00:01:26,200
+GPT-5.6, through Codex, helped shape the goal framing,
+trust rules, and UX decisions.
+
+21
+00:01:26,200 --> 00:01:32,450
+Live drafting uses reliable model routing,
+but humans stay in the approval loop.
+
+22
+00:01:32,957 --> 00:01:36,250
+Relay—say it better.
+
+23
+00:01:36,250 --> 00:01:39,300
+Try it at relay.durgaai.com.
