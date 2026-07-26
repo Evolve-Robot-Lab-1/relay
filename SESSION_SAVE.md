@@ -551,3 +551,74 @@ Resuming this checkpoint: dashboard redesign + pricing relabel are the only edit
    pilot.
 
 Last updated: 2026-07-26 (Asia/Kolkata)
+
+## Session: 2026-07-27 Facebook and LinkedIn extension stabilization
+
+### Saved release
+
+- Facebook post compose, top-level comments, and specific-comment replies were
+  stabilized and manually accepted before release.
+- Facebook no longer freezes from Relay's mutation observer, no longer treats
+  an automatically inserted commenter name as authored text, and keeps the
+  exact replied-to comment first in context.
+- Facebook and other top-layer social composers now use direct Create,
+  Suggest, Tone, Refine, Copy, Start over, and Insert actions instead of
+  simulated clicks against hidden controls.
+- Generation and refine failures remain visible in the social panel instead of
+  being overwritten by generic helper text.
+- LinkedIn now has separate post, top-level comment, and specific-comment
+  handling, including dynamic empty-composer discovery, nearby author/context
+  capture, automatic mention removal, and a narrower right-side panel.
+- LinkedIn focus-trap handling was hardened so Relay can capture text into its
+  visible instruction field even when LinkedIn tries to return DOM focus to the
+  modal. The LinkedIn site composer is no longer made inert.
+- Gmail signature preservation and the existing WhatsApp-specific context and
+  insertion paths remain unchanged. The shared browser regression continued to
+  pass after the social changes.
+
+### Production packaging boundary
+
+- The unpacked local build still tries `http://192.168.1.16:8787` first and has
+  a local-only 400-action testing allowance.
+- `scripts/package-extension.sh` now removes that allowance and fails the build
+  if a local URL or `RELAY-PRO-LOCALTEST` marker remains.
+- The deployed production ZIP contains only `https://relay.durgaai.com` API
+  endpoints and is 63,375 bytes.
+- Email OTP and one-time download-token protection remain enabled. Direct
+  unauthenticated ZIP access returns HTTP 403.
+
+### Verification and deployment
+
+- `npm run test:extension:browser` passed, covering generic editors, Gmail
+  signatures, Facebook posts/replies/refine/insertion, LinkedIn pre-typing
+  discovery, LinkedIn focus-trap typing, post comments, specific-comment
+  context, and insertion.
+- `npm run check`, `npm run test:quick:local`, `npm run test:goals`, ZIP
+  integrity, and `git diff --check` passed.
+- Facebook release commit: `df75171`.
+- LinkedIn and production-package release commit: `29e741b`.
+- Cloudflare Worker version:
+  `ffc2dfe1-0801-47fb-912b-e23d8a4fbd0a`.
+- Production URLs `https://relay.durgaai.com` and
+  `https://agent-network.salesagent.workers.dev` both returned healthy JSON.
+- Production extension page returned HTTP 200; direct ZIP returned HTTP 403.
+- `.opencode/` remains unrelated, untracked, and untouched.
+
+### Resume tomorrow
+
+1. Download the production-connected extension through
+   `https://relay.durgaai.com/extension` using email OTP, or reload the unpacked
+   extension for local-only verification.
+2. Refresh the LinkedIn tab after reloading the extension.
+3. Verify LinkedIn in this order:
+   - Open **Start a post** and confirm Relay is discoverable before typing.
+   - Type in Relay's visible instruction field and generate a post.
+   - Confirm the LinkedIn composer itself remains editable.
+   - Test a top-level post comment with Suggest replies.
+   - Test Reply on a specific comment and confirm the prefilled person's name
+     opens the empty Reply flow rather than Improve.
+   - Test Tone, Refine, Insert, and verify insertion occurs exactly once.
+4. Treat any LinkedIn live-DOM mismatch as tomorrow's first release-blocking
+   fix. Do not expand to another platform until LinkedIn passes.
+
+Last updated: 2026-07-27 (Asia/Kolkata)
