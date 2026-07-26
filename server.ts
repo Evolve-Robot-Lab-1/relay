@@ -107,7 +107,11 @@ export default {
     };
     if (request.method === 'GET' && marketingPages[url.pathname]) {
       const assetUrl = new URL(marketingPages[url.pathname], url.origin);
-      const assetResponse = await env.ASSETS.fetch(assetUrl);
+      // Pass a Request rather than a URL object. The local asset simulator accepts
+      // both, while the production binding resolves clean-route rewrites reliably
+      // only from a Request carrying the rewritten pathname.
+      const assetRequest = new Request(assetUrl.toString(), { method: 'GET', headers: request.headers });
+      const assetResponse = await env.ASSETS.fetch(assetRequest);
       if (assetResponse.ok) {
         const headers = new Headers(assetResponse.headers);
         headers.set('content-type', 'text/html; charset=utf-8');
@@ -116,7 +120,7 @@ export default {
       }
       // Some asset configurations 307 clean URLs; fall through to a direct HTML body fetch once.
       if (assetResponse.status >= 300 && assetResponse.status < 400) {
-        const retry = await env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET' }));
+        const retry = await env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET', headers: request.headers }));
         if (retry.ok) {
           return new Response(await retry.text(), {
             status: 200,
