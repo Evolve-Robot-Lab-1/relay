@@ -49,7 +49,13 @@ async function handleRelayMessage(message) {
   let lastError;
   for (const url of urls) {
     try {
-      return await postJson(url, body);
+      // The unpacked development build needs enough capacity for repeated
+      // cross-site regression testing. Never carry this test plan into the
+      // production fallback request or the packaged store extension.
+      const requestBody = DEV_API_URL.startsWith('http://') && url === DEV_API_URL && isCompose
+        ? { ...body, planCode: 'RELAY-PRO-LOCALTEST' }
+        : body;
+      return await postJson(url, requestBody);
     } catch (error) {
       lastError = error;
     }

@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
 
 const chromePath = process.env.CHROME_BIN || '/usr/bin/google-chrome';
-const extensionPath = resolve(new URL('../extension', import.meta.url).pathname);
 const contentSource = await readFile(new URL('../extension/content.js', import.meta.url), 'utf8');
 const profileDir = await mkdtemp(join(tmpdir(), 'relay-extension-browser-'));
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
@@ -25,8 +24,46 @@ async function freePort() {
 
 const fixturePort = await freePort();
 const debugPort = await freePort();
-const fixture = createHttpServer((_request, response) => {
+const fixture = createHttpServer((request, response) => {
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  if (request.url === '/facebook-post') {
+    response.end(`<!doctype html><html><body>
+      <div role="dialog" aria-label="Create post" style="position:fixed;left:200px;top:80px;width:500px;height:520px">
+        <h2>Create post</h2>
+        <div id="facebook-post" role="textbox" contenteditable="true" aria-label="What's on your mind?" data-placeholder="What's on your mind?" style="width:460px;min-height:120px"></div>
+      </div>
+    </body></html>`);
+    return;
+  }
+  if (request.url === '/facebook-reply') {
+    response.end(`<!doctype html><html><body>
+      <div role="dialog" aria-label="Post comments" style="position:fixed;left:180px;top:60px;width:560px;height:560px">
+        <article role="article">
+          <div data-testid="post_message" dir="auto">Is this laptop still available?</div>
+          <div><span dir="auto">Another Person</span><div dir="auto">I think the price is too high.</div></div>
+          <div><span dir="auto">Vignesh Kamaraj</span><div dir="auto">Interested, please send the price and details.</div></div>
+          <form aria-label="Reply to Vignesh Kamaraj">
+            <div id="facebook-reply" role="textbox" contenteditable="true" aria-label="Reply to Vignesh Kamaraj" style="width:480px;min-height:60px">Vignesh Kamaraj</div>
+          </form>
+        </article>
+      </div>
+    </body></html>`);
+    return;
+  }
+  if (request.url === '/facebook-typed-reply') {
+    response.end(`<!doctype html><html><body>
+      <div role="dialog" aria-label="Post comments" style="position:fixed;left:180px;top:60px;width:560px;height:560px">
+        <article role="article">
+          <a role="link" href="/vignesh">Vignesh Kamaraj</a>
+          <div dir="auto">Interested, please send the price and details.</div>
+          <form aria-label="Reply to Vignesh Kamaraj">
+            <div id="facebook-typed-reply" role="textbox" contenteditable="true" aria-label="Reply to Vignesh Kamaraj" style="width:480px;min-height:60px">Thank You</div>
+          </form>
+        </article>
+      </div>
+    </body></html>`);
+    return;
+  }
   response.end(`<!doctype html><html><body>
     <main><p id="incoming">Could you send the proposal by Friday?</p>
       <label for="compose">Your reply</label><textarea id="compose" placeholder="Write a thoughtful reply"></textarea>
@@ -43,10 +80,9 @@ const chrome = spawn(chromePath, [
   '--no-sandbox',
   '--disable-gpu',
   '--disable-dev-shm-usage',
-  '--enable-extensions',
+  '--window-size=1366,900',
+  '--disable-extensions',
   `--user-data-dir=${profileDir}`,
-  `--disable-extensions-except=${extensionPath}`,
-  `--load-extension=${extensionPath}`,
   `--remote-debugging-port=${debugPort}`,
   `http://127.0.0.1:${fixturePort}/`
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -223,6 +259,205 @@ try {
   await delay(50);
   const longAnswerVisible = await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').classList.contains('visible')`);
   assert.equal(longAnswerVisible, true, 'Long writing inputs should show Relay');
+
+  const loadFacebookFixture = async path => {
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${fixturePort}${path}` });
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (await evaluate(`document.readyState === 'complete' && location.pathname === ${JSON.stringify(path)}`)) break;
+      if (attempt === 199) throw new Error(`Facebook fixture ${path} did not load.`);
+      await delay(25);
+    }
+    await evaluate(`(() => {
+      globalThis.__relayComposeRequests = [];
+      const runtime = {
+        lastError: null,
+        connect() { throw new Error('Use deterministic test messaging'); },
+        sendMessage(message, callback) {
+          if (message?.type === 'relay-compose') {
+            globalThis.__relayComposeRequests.push(message.body);
+            if (message.body?.direction === 'force error') {
+              callback({ ok: false, status: 429, data: { error: 'Please wait a moment before using Relay again.' } });
+              return;
+            }
+            const suggestion = message.body?.goal === 'suggest';
+            const refinement = message.body?.goal === 'improve_text';
+            callback({ ok: true, status: 200, data: {
+              draft: suggestion
+                ? 'Yes, it is available. I’ll send the price and details.'
+                : refinement ? 'Do it right now.' : 'Do it now.',
+              needsClarification: false
+            } });
+            return;
+          }
+          callback({ ok: true, status: 200, data: {} });
+        }
+      };
+      try { Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime } }); }
+      catch { globalThis.chrome.runtime = runtime; }
+    })()`);
+    // Exercise the exact artifact while making only the hostname deterministic.
+    const facebookSource = contentSource.replaceAll('location.hostname.toLowerCase()', "'facebook.com'");
+    await evaluate(`(0, eval)(${JSON.stringify(facebookSource)})`);
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (await evaluate(`Boolean(document.querySelector('#relay-extension-host')?.shadowRoot)`)) return;
+      if (attempt === 199) throw new Error(`Relay did not load for ${path}.`);
+      await delay(25);
+    }
+  };
+
+  await loadFacebookFixture('/facebook-post');
+  await evaluate(`(() => {
+    const field=document.querySelector('#facebook-post');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  const facebookPostOpen = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const dialog=document.querySelector('[role=dialog]').getBoundingClientRect();
+    const box=bridge.getBoundingClientRect();
+    return {
+      visible:bridge.style.display==='block',
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      createDisabled:bridge.querySelector('[data-relay-create]').disabled,
+      suggestHidden:bridge.querySelector('[data-relay-suggest]').hidden,
+      browserPrompt:document.body.textContent.includes('Use browser prompt instead'),
+      overlaps:!(box.right<=dialog.left||box.left>=dialog.right||box.bottom<=dialog.top||box.top>=dialog.bottom)
+    };
+  })()`);
+  assert.equal(facebookPostOpen.visible, true, 'Facebook post compose must use the top-layer Relay panel');
+  assert.equal(facebookPostOpen.question, 'What do you want to post?');
+  assert.equal(facebookPostOpen.createDisabled, true, 'An empty post needs an instruction');
+  assert.equal(facebookPostOpen.suggestHidden, true, 'Post compose must not offer reply suggestions');
+  assert.equal(facebookPostOpen.browserPrompt, false, 'The obsolete browser prompt fallback must not return');
+  assert.equal(facebookPostOpen.overlaps, false, 'Relay must sit beside, not over, the Facebook post modal');
+
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-direction]');
+    input.value='doo it noww';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-create]').click();
+  })()`);
+  await delay(100);
+  const facebookPostDraft = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    return {
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      preview:bridge.querySelector('[data-relay-preview]').textContent,
+      toneHidden:bridge.querySelector('[data-relay-tone]').hidden,
+      actionsHidden:bridge.querySelector('[data-relay-actions]').hidden
+    };
+  })()`);
+  assert.equal(facebookPostDraft.question, 'Post ready');
+  assert.equal(facebookPostDraft.preview, 'Do it now.');
+  assert.equal(facebookPostDraft.toneHidden, false, 'Facebook post drafts must expose tone changes');
+  assert.equal(facebookPostDraft.actionsHidden, false);
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-tone]').click()`);
+  await delay(100);
+  const facebookTone = await evaluate(`(() => ({
+    requested:globalThis.__relayComposeRequests.at(-1)?.tone,
+    label:document.querySelector('#relay-top-bridge [data-relay-tone-label]').textContent
+  }))()`);
+  assert.equal(facebookTone.requested, 'warm', 'Facebook tone changes must call generation directly');
+  assert.match(facebookTone.label, /Warm tone/, 'The Facebook panel must show the active tone');
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-refine]');
+    input.value='Make it more immediate';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-refine-button]').click();
+  })()`);
+  await delay(100);
+  const facebookRefine = await evaluate(`(() => ({
+    request:globalThis.__relayComposeRequests.at(-1),
+    preview:document.querySelector('#relay-top-bridge [data-relay-preview]').textContent
+  }))()`);
+  assert.equal(facebookRefine.request.goal, 'improve_text', 'Facebook Refine must use the refinement goal');
+  assert.equal(facebookRefine.request.text, 'Do it now.', 'Facebook Refine must use the generated draft as its source');
+  assert.equal(facebookRefine.request.direction, 'Make it more immediate', 'Facebook Refine must send the refinement instruction');
+  assert.equal(facebookRefine.preview, 'Do it right now.', 'Facebook Refine must replace the preview with the refined draft');
+
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-startover]').click()`);
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-direction]');
+    input.value='force error';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-create]').click();
+  })()`);
+  await delay(100);
+  assert.match(
+    await evaluate(`document.querySelector('#relay-top-bridge [data-relay-status]').textContent`),
+    /Please wait a moment/,
+    'Facebook must show generation failures instead of appearing unresponsive'
+  );
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-direction]');
+    input.value='do it now';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-create]').click();
+  })()`);
+  await delay(100);
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-insert]').click()`);
+  await delay(100);
+  assert.equal(
+    await evaluate(`document.querySelector('#facebook-post').innerText`),
+    'Do it now.',
+    'Facebook insertion must replace the editor exactly once'
+  );
+
+  await loadFacebookFixture('/facebook-reply');
+  await evaluate(`(() => {
+    const field=document.querySelector('#facebook-reply');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  const facebookReplyOpen = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    return {
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      suggestHidden:bridge.querySelector('[data-relay-suggest]').hidden,
+      suggestDisabled:bridge.querySelector('[data-relay-suggest]').disabled
+    };
+  })()`);
+  assert.equal(facebookReplyOpen.question, 'What should this reply say?', 'A Facebook name mention is not authored reply text');
+  assert.equal(facebookReplyOpen.suggestHidden, false, 'Facebook replies must offer context-based suggestions');
+  assert.equal(facebookReplyOpen.suggestDisabled, false, 'Visible post/comment context must enable suggestions');
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-suggest]').click()`);
+  await delay(100);
+  const specificReplyContext = await evaluate(`globalThis.__relayComposeRequests.at(-1)?.context?.nearbyText || ''`);
+  assert.match(specificReplyContext, /^Replying to Vignesh Kamaraj's comment:/, 'The specific replied-to Facebook comment must be first in context');
+  assert.match(specificReplyContext, /Interested, please send the price and details\./, 'The specific comment body must be captured');
+  assert.equal(
+    await evaluate(`document.querySelector('#relay-top-bridge [data-relay-preview]').textContent`),
+    'Yes, it is available. I’ll send the price and details.',
+    'Facebook suggestions must use the direct generation path'
+  );
+
+  await loadFacebookFixture('/facebook-typed-reply');
+  await evaluate(`(() => {
+    const field=document.querySelector('#facebook-typed-reply');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  const typedReplyQuestion = await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.question').textContent`);
+  assert.equal(typedReplyQuestion, 'Improve this reply', 'A genuine short Facebook reply must not be discarded as a name placeholder');
+  await evaluate(`(() => {
+    const fragment=document.createDocumentFragment();
+    for(let index=0;index<500;index+=1) fragment.append(document.createElement('i'));
+    document.body.append(fragment);
+  })()`);
+  await Promise.race([
+    delay(100),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Facebook mutation handling stalled')), 1000))
+  ]);
   console.log('Relay extension browser checks passed.');
 } finally {
   cdp?.socket.close();

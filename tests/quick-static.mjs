@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
-const [server, backend, ui, extensionSource, extensionManifestSource, extensionPrivacy, webManifestSource, wranglerConfig, extensionPage] = await Promise.all([
+const [server, backend, ui, extensionSource, extensionBackground, extensionManifestSource, extensionPrivacy, webManifestSource, wranglerConfig, extensionPage] = await Promise.all([
   readFile(new URL('server.ts', root), 'utf8'),
   readFile(new URL('backend.ts', root), 'utf8'),
   readFile(new URL('ui.ts', root), 'utf8'),
   readFile(new URL('extension/content.js', root), 'utf8'),
+  readFile(new URL('extension/background.js', root), 'utf8'),
   readFile(new URL('extension/manifest.json', root), 'utf8'),
   readFile(new URL('extension/PRIVACY.md', root), 'utf8'),
   readFile(new URL('public/manifest.webmanifest', root), 'utf8'),
@@ -75,7 +76,12 @@ assert.ok(extensionManifest.host_permissions.includes('https://relay.durgaai.com
 assert.equal(extensionManifest.version, '1.0.0', 'Relay copilot release version is incorrect');
 assert.ok(extensionManifest.icons?.['128'], 'Store package requires a 128px icon');
 assert.match(extensionSource, /chrome\.runtime\.connect/, 'Composer must keep a background port for reliable drafting');
+assert.match(extensionBackground, /DEV_API_URL\.startsWith\('http:\/\/'\).*RELAY-PRO-LOCALTEST/s, 'Local test allowance must be restricted to the HTTP development API');
 assert.match(extensionSource, /FALLBACK_API_URL|relay\.durgaai\.com\/api\/compose/, 'Composer needs an HTTPS fallback when the background bridge is down');
+assert.match(extensionSource, /facebookReplyMentionPlaceholder/, 'Facebook reply mentions must not be treated as user-authored text');
+assert.match(extensionSource, /data-relay-tone/, 'Top-layer social composer must expose tone control after drafting');
+assert.doesNotMatch(extensionSource, /Use browser prompt instead/, 'Top-layer social composer must not expose the obsolete browser prompt fallback');
+assert.match(backend, /composerKind === 'post'/, 'Social post drafting guidance is missing');
 assert.match(extensionSource, /whatsappQuotedReply/, 'WhatsApp quoted-reply intent capture is missing');
 assert.match(extensionSource, /whatsappMessageItems/, 'WhatsApp current-DOM message discovery is missing');
 assert.match(extensionSource, /Replying to:/, 'WhatsApp reply target must be labeled for compose');

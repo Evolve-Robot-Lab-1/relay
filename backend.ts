@@ -14,7 +14,7 @@ const COMPOSE_GOALS = new Set(['create', 'improve_text', 'write', 'reply', 'foll
 const COMPOSE_TONES: Record<string, string> = { natural: 'preserve', warm: 'friendly', direct: 'direct' };
 const COMPOSE_PAGE_TYPES = new Set(['ai', 'email', 'form', 'messaging', 'crm', 'generic']);
 const COMPOSE_GOAL_GUIDANCE: Record<string, string> = {
-  create: 'Create the text requested by the User. Infer whether it is a message, reply, prompt, post, or form answer from the page context and field metadata. Follow the User instruction exactly and ask one short clarification question instead of inventing a missing position or fact.',
+  create: 'Create the actual text requested by the User. Infer whether it is a message, reply, prompt, post, or form answer from the page context and field metadata. The User direction may be a rough draft or an instruction: correct obvious spelling, capitalization, punctuation, and broken wording while preserving its meaning. Never echo visibly misspelled rough text unchanged. Ask one short clarification question instead of inventing a missing position or fact.',
   improve_text: 'Improve only the User text already present in the focused field. Correct spelling, punctuation, grammar, accidental all-caps, broken sentence boundaries, and awkward wording while preserving the exact meaning, speech act, facts, and tone strength. Combine obvious fragments into one natural sentence when that is clearer. Never leave a trailing one-word sentence fragment; integrate it naturally into the sentence it modifies. For example, "SE THIS NOW.MODIFIED" should become "See the modified version now.", not "See this now. Modified." Do not answer it, expand it with new information, reinterpret it, or turn it into advice.',
   write: 'Write the message, post, comment, or other text requested by the User. Infer the speech act from the User direction, but ask one short clarification question if the intended meaning or position is missing.',
   reply: 'Write the response the User should send to the selected or nearby message. Follow the User direction; if none is supplied, ask one short clarification question instead of guessing their position.',
@@ -967,7 +967,8 @@ export class RelayStore {
       selectedText: cleanText(rawContext.selectedText, 3000),
       nearbyText: cleanText(rawContext.nearbyText, 5000),
       fieldLabel: cleanText(rawContext.fieldLabel, 200),
-      fieldPlaceholder: cleanText(rawContext.fieldPlaceholder, 200)
+      fieldPlaceholder: cleanText(rawContext.fieldPlaceholder, 200),
+      composerKind: /^(?:post|reply)$/.test(rawContext.composerKind) ? String(rawContext.composerKind) : ''
     };
     const clarification = cleanText(body?.clarification, 1000);
     if (!goal) return quickJson(request, { error: 'Relay could not determine whether to improve or create text.' }, 400);
@@ -1832,7 +1833,9 @@ Instructions: Read the conversation context and the User's situation description
     const toneRule = TONE_GUIDANCE[internalTone] || TONE_GUIDANCE.preserve;
     const source = [text, direction, clarification].filter(Boolean).join('\n');
     const protectedTermsDetected = protectedTerms(source);
-    const composeContextRule = context.pageType === 'messaging' && goal === 'create'
+    const composeContextRule = context.composerKind === 'post' && goal === 'create'
+      ? `7. This is a social post composer. Write the actual post, not instructions about a post. The User direction may itself be rough post copy; if so, repair obvious spelling, capitalization, punctuation, and duplicated letters. Never return visibly misspelled direction text unchanged. Do not add hashtags, claims, context, or promotional language the User did not supply.`
+      : context.pageType === 'messaging' && goal === 'create'
       ? `7. This is a reply in an active messaging thread. The User's instruction is the authoritative statement of what they want to communicate; the conversation context only identifies what they are replying to. Do not replace the User's requested action with an apology, explanation, payment, or promise inferred from the thread. Preserve the User's recipient, pronouns, quantities, timing, and certainty. If the instruction contains a material contradiction (for example, different recipient pronouns or an unclear amount/date), ask one short clarification question instead of guessing.`
       : context.pageType === 'email'
         ? `7. This is an email${goal === 'create' ? '. Write the email body with proper email format: start with an appropriate salutation (Hi/Hello/Dear), keep paragraphs concise, and end with a suitable sign-off (Best/Thanks/Regards). Do not add a subject line' : ''}. Keep the tone natural and conversational unless the selected tone specifies otherwise.`

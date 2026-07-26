@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const EDITOR_SELECTOR = 'textarea, input, [contenteditable="true"], [contenteditable=""], [role="textbox"][contenteditable], .ql-editor[contenteditable], [data-lexical-editor="true"]';
+  const EDITOR_SELECTOR = 'textarea, input, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"][contenteditable], .ql-editor[contenteditable], [data-lexical-editor="true"]';
   const TONES = [
     ['natural', 'Natural'],
     ['warm', 'Warm'],
@@ -252,11 +252,17 @@
 
   function readEditorMessage(target) {
     if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) return target.value;
-    if (!(target instanceof HTMLElement) || !editorTemplate(target)) return readEditor(target);
-    const clone = target.cloneNode(true);
-    if (!(clone instanceof HTMLElement)) return readEditor(target);
-    for (const template of clone.querySelectorAll(TEMPLATE_SELECTOR)) template.remove();
-    return normalizeEditorText(clone.innerText || clone.textContent || '');
+    let message = '';
+    if (!(target instanceof HTMLElement) || !editorTemplate(target)) message = readEditor(target);
+    else {
+      const clone = target.cloneNode(true);
+      if (!(clone instanceof HTMLElement)) message = readEditor(target);
+      else {
+        for (const template of clone.querySelectorAll(TEMPLATE_SELECTOR)) template.remove();
+        message = normalizeEditorText(clone.innerText || clone.textContent || '');
+      }
+    }
+    return facebookReplyMentionPlaceholder(target, message) ? '' : message;
   }
 
   function replaceMessageBeforeTemplate(target, text) {
@@ -302,7 +308,23 @@
   }
 
   function collapseDoubledEditor(target, text) {
-    if (!isExactDouble(readEditor(target), text)) return false;
+    if (!isExactDouble(readEditor(target), text)) {
+      const current = readEditor(target);
+      if (current && text && current !== text && clean(current, 20000).includes(clean(text, 20000))) {
+        const lexical = findLexicalEditor(target);
+        if (lexical && writeLexicalState(lexical, text)) return true;
+        if (usesLexicalEditor(target)) {
+          writeLexicalEditor(target, text);
+          return true;
+        }
+        if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+          target.value = text;
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }
+      }
+      return false;
+    }
     const lexical = findLexicalEditor(target);
     if (lexical && writeLexicalState(lexical, text)) return true;
     if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
@@ -323,6 +345,13 @@
     try { document.execCommand('delete', false, null); } catch {}
     const lexical = findLexicalEditor(target);
     if (lexical) writeLexicalState(lexical, '');
+    else if (usesLexicalEditor(target)) {
+      const root = target.closest?.('[data-lexical-editor="true"]')
+        || target.closest?.('[role="textbox"][contenteditable="true"]')
+        || target;
+      root.textContent = '';
+      try { root.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+    }
   }
 
   function writeLexicalEditor(target, text) {
@@ -383,6 +412,13 @@
       return;
     }
 
+    if (usesLexicalEditor(root) || root.querySelector?.('[data-lexical-text]')) {
+      clearContentEditable(root);
+      writeLexicalEditor(root, text);
+      collapseDoubledEditor(root, text);
+      return;
+    }
+
     clearContentEditable(root);
     let inserted = false;
     try { inserted = document.execCommand('insertText', false, text); } catch {}
@@ -394,13 +430,6 @@
     clearContentEditable(root);
     pasteIntoEditor(root, text);
     if (editorReflects(root, text) || clean(readEditor(root), 20000).includes(clean(text, 20000))) {
-      collapseDoubledEditor(root, text);
-      return;
-    }
-
-    if (usesLexicalEditor(root) || root.querySelector?.('[data-lexical-text]')) {
-      clearContentEditable(root);
-      writeLexicalEditor(root, text);
       collapseDoubledEditor(root, text);
       return;
     }
@@ -492,14 +521,15 @@
     if (!root) return null;
     if (root.__lexicalEditor || root._lexicalEditor) return root.__lexicalEditor || root._lexicalEditor;
     let node = root;
-    for (let depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+    for (let depth = 0; node && depth < 15; depth += 1, node = node.parentElement) {
       const key = Object.keys(node).find(name => name.startsWith('__reactFiber') || name.startsWith('__reactInternalInstance'));
       let fiber = key ? node[key] : null;
-      for (let hop = 0; fiber && hop < 50; hop += 1, fiber = fiber.return) {
+      for (let hop = 0; fiber && hop < 80; hop += 1, fiber = fiber.return) {
         const editor = fiber.memoizedProps?.editor
           || fiber.memoizedProps?.lexicalEditor
           || fiber.stateNode?.editor
-          || fiber.stateNode?.__lexicalEditor;
+          || fiber.stateNode?.__lexicalEditor
+          || fiber.stateNode?._editor;
         if (editor && typeof editor.parseEditorState === 'function' && typeof editor.setEditorState === 'function') return editor;
       }
     }
@@ -575,6 +605,135 @@
     const dialogLabel = (target.closest('[role="dialog"]')?.getAttribute('aria-label') || '').toLowerCase();
     if (/\b(?:create post|edit post|new post)\b/.test(dialogLabel)
       || /\b(?:what['’]?s on your mind|create a post|write a post)\b/.test(labels)) return 'post';
+    return '';
+  }
+
+  function linkedinComposerKind(target) {
+    if (!(target instanceof HTMLElement) || !/(?:^|\.)linkedin\.com$/.test(location.hostname.toLowerCase())) return '';
+    const metadata = `${fieldMetadata(target)} ${target.getAttribute('aria-label') || ''} ${target.getAttribute('placeholder') || ''}`.toLowerCase();
+    let node = target.parentElement;
+    let ancestorLabels = '';
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      ancestorLabels += ` ${node.getAttribute?.('aria-label') || ''} ${node.getAttribute?.('role') || ''}`;
+      if (node.matches?.('.msg-overlay-conversation-bubble, .msg-convo-wrapper, [role="dialog"]')) break;
+    }
+    const labels = `${metadata} ${ancestorLabels}`.toLowerCase();
+    if (/\b(?:write a message|send a message|type a message)\b/.test(labels)
+      || target.closest('.msg-overlay-conversation-bubble, .msg-convo-wrapper')) return 'reply';
+    const dialog = target.closest('[role="dialog"], .artdeco-modal');
+    if (dialog) {
+      const dialogLabel = (dialog.getAttribute('aria-label') || dialog.getAttribute('data-modal-title') || '').toLowerCase();
+      if (/\b(?:create a post|start a post|write a post|share something|share an update)\b/.test(dialogLabel)) return 'post';
+    }
+    const body = (document.body.innerText || '').slice(0, 300).toLowerCase();
+    if (/\b(?:start a post|share an update)\b/.test(body)) return 'post';
+    return '';
+  }
+
+  function facebookReplyTargetName(target) {
+    if (!(target instanceof HTMLElement)) return '';
+    const labels = [];
+    let node = target;
+    for (let depth = 0; node && depth < 9; depth += 1, node = node.parentElement) {
+      labels.push(
+        node.getAttribute?.('aria-label') || '',
+        node.getAttribute?.('data-placeholder') || '',
+        node.getAttribute?.('placeholder') || '',
+        node.getAttribute?.('title') || ''
+      );
+      if (node.matches?.('[role="article"], [role="dialog"]')) break;
+    }
+    for (const label of labels) {
+      const normalized = clean(label, 240);
+      const match = normalized.match(/\brepl(?:y|ying)\s+to\s+(.+?)(?:['’]s\s+comment|[|·,:]|\s+-\s+|$)/i);
+      const name = clean(match?.[1], 120);
+      if (name && !/^(?:this|the|a)\s+(?:comment|post)$/i.test(name)) return name;
+    }
+    return '';
+  }
+
+  function facebookReplyMentionPlaceholder(target, text) {
+    if (!(target instanceof HTMLElement) || !text || facebookComposerKind(target) !== 'reply') return false;
+    const placeholder = clean(text, 120);
+    const replyTarget = facebookReplyTargetName(target);
+    if (replyTarget && placeholder.toLocaleLowerCase() === replyTarget.toLocaleLowerCase()) return true;
+    const explicitMention = target.querySelector(
+      '[data-mention], [data-testid*="mention" i], [data-lexical-decorator], [role="link"][href*="/profile" i], a[href*="/user" i]'
+    );
+    if (explicitMention) {
+      const mentionText = clean(explicitMention.innerText || explicitMention.textContent, 300);
+      if (mentionText && placeholder === mentionText) return true;
+    }
+    if (/^anonymous participant(?:\s+\d+)?$/i.test(placeholder)) return true;
+
+    // Facebook often inserts the replied-to display name as plain Lexical text
+    // with no mention metadata. Confirm it against a nearby author link/name
+    // before treating it as platform chrome, so a genuine short reply such as
+    // "Thank You" is never discarded merely because it looks like a name.
+    const scope = target.closest('[role="article"]')
+      || target.closest('[role="dialog"]')
+      || target.closest('form')
+      || target.parentElement;
+    if (scope) {
+      const authorSelector = [
+        'a[role="link"]',
+        'strong',
+        'h3',
+        'h4',
+        'span[dir="auto"]',
+        'span',
+        '[data-ad-rendering-role="profile_name"]',
+        '[data-testid*="author" i]'
+      ].join(', ');
+      for (const candidate of scope.querySelectorAll(authorSelector)) {
+        if (!(candidate instanceof HTMLElement) || target.contains(candidate) || candidate.closest('[contenteditable]')) continue;
+        const author = clean(candidate.innerText || candidate.textContent, 120);
+        if (author && author === placeholder) return true;
+      }
+    }
+
+    // A whole-editor selection is Facebook's final fallback when its author
+    // node is outside the local reply form (common in nested comment modals).
+    const selection = window.getSelection();
+    const selectedWholeEditor = Boolean(
+      selection?.rangeCount
+      && target.contains(selection.anchorNode)
+      && clean(selection.toString(), 300) === placeholder
+    );
+    if (!selectedWholeEditor) return false;
+    const nameLike = /^(?:[A-Z][\p{L}'’-]{1,40})(?:\s+[A-Z][\p{L}'’-]{1,40}){1,4}$/u.test(placeholder);
+    return nameLike;
+  }
+
+  function facebookSpecificReplyContext(target) {
+    if (!(target instanceof HTMLElement)) return '';
+    const replyTarget = facebookReplyTargetName(target);
+    if (!replyTarget) return '';
+    const scope = target.closest('[role="article"]') || target.closest('[role="dialog"]');
+    if (!scope) return '';
+    const candidates = scope.querySelectorAll(
+      'a[role="link"], strong, h3, h4, span[dir="auto"], [data-ad-rendering-role="profile_name"], [data-testid*="author" i]'
+    );
+    for (const authorNode of candidates) {
+      if (!(authorNode instanceof HTMLElement) || target.contains(authorNode) || authorNode.closest('[contenteditable]')) continue;
+      if (clean(authorNode.innerText || authorNode.textContent, 120).toLocaleLowerCase() !== replyTarget.toLocaleLowerCase()) continue;
+      let container = authorNode.parentElement;
+      for (let depth = 0; container && depth < 7 && scope.contains(container); depth += 1, container = container.parentElement) {
+        if (container.contains(target)) break;
+        const clone = container.cloneNode(true);
+        if (!(clone instanceof HTMLElement)) continue;
+        for (const noise of clone.querySelectorAll('button, [role="button"], [contenteditable], svg, img')) noise.remove();
+        const value = clean(clone.innerText || clone.textContent, 1400);
+        const remainder = clean(
+          value.replace(replyTarget, '').replace(/\b(?:\d+\s*(?:m|min|h|hr|d|day|w|wk)|edited|like|reply|share)\b/gi, ''),
+          1000
+        );
+        if (value.length <= 1200 && remainder.length >= 2) {
+          return clean(`Replying to ${replyTarget}'s comment:\n${value}`, 1800);
+        }
+        if (value.length > 1200) break;
+      }
+    }
     return '';
   }
 
@@ -725,6 +884,7 @@
         || target.closest('form')?.closest('[role="article"]')
         || target.closest('[role="dialog"]');
       if (!root) return '';
+      const specificReply = facebookSpecificReplyContext(target);
       const context = recentItems(
         root.querySelectorAll('[data-ad-preview="message"], [data-testid="post_message"], [role="article"] [dir="auto"], [dir="auto"]'),
         target,
@@ -734,6 +894,10 @@
         },
         8
       );
+      if (specificReply && context) {
+        return clean(`${specificReply}\n\nFacebook post and recent comment context:\n${context}`, 5000);
+      }
+      if (specificReply) return specificReply;
       return context ? clean(`Facebook post and comment context:\n${context}`, 5000) : '';
     }
 
@@ -835,6 +999,7 @@
     const selectedText = activeSelectedText() || clean(quotedReply, 3000);
     return {
       pageType: detectPageType(target),
+      composerKind: facebookComposerKind(target) || linkedinComposerKind(target) || '',
       selectedText,
       nearbyText: clean(nearbyText, 5000),
       fieldLabel: label,
@@ -890,30 +1055,37 @@
     topBridge.setAttribute('popover', 'manual');
     topBridge.setAttribute('data-relay-ui', 'true');
     topBridge.style.cssText = [
+      'position:fixed',
+      'inset:auto',
       'border:0',
       'padding:0',
-      'margin:auto',
+      'margin:0',
       'background:transparent',
+      'width:min(380px,calc(100vw - 24px))',
       'max-width:calc(100vw - 24px)',
       'color-scheme:dark'
     ].join(';');
     topBridge.innerHTML = `
-      <div style="font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#101512;border:1px solid #2a3d32;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.48);color:#edf5ef;padding:16px;width:min(380px,calc(100vw - 24px));">
+      <div style="box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#101512;border:1px solid #2a3d32;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.48);color:#edf5ef;padding:16px;width:100%;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="color:#00e982;font-size:14px;font-weight:850;">Relay</div>
           <button type="button" data-relay-close style="background:transparent;border:0;color:#9eaaa2;font-size:20px;cursor:pointer;line-height:1;">×</button>
         </div>
         <div data-relay-question style="font-size:17px;font-weight:760;margin-bottom:8px;">What do you want to write?</div>
         <textarea data-relay-direction maxlength="1000" placeholder="Short instruction…" style="width:100%;min-height:84px;background:#171e1a;border:1px solid #34443b;border-radius:12px;color:#f2f7f3;padding:10px 11px;line-height:1.45;resize:vertical;display:block;box-sizing:border-box;"></textarea>
-        <button type="button" data-relay-create style="margin-top:10px;width:100%;background:#00e982;border:1px solid #00e982;border-radius:10px;color:#04120b;font-size:12px;font-weight:800;min-height:38px;cursor:pointer;">Create draft</button>
-        <button type="button" data-relay-prompt style="margin-top:8px;width:100%;background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:36px;cursor:pointer;">Use browser prompt instead</button>
+        <div data-relay-compose-actions style="display:flex;gap:8px;margin-top:10px;">
+          <button type="button" data-relay-create style="flex:1;background:#00e982;border:1px solid #00e982;border-radius:10px;color:#04120b;font-size:12px;font-weight:800;min-height:38px;cursor:pointer;">Create draft</button>
+          <button type="button" data-relay-suggest hidden style="flex:1;background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:38px;cursor:pointer;">Suggest replies</button>
+        </div>
         <div data-relay-status role="status" style="color:#aab7af;font-size:12px;line-height:1.45;margin-top:12px;min-height:18px;">Type here. This window stays above the site composer.</div>
         <div data-relay-preview hidden style="background:#171e1a;border:1px solid #34443b;border-radius:12px;color:#f2f7f3;font-size:14px;line-height:1.5;margin-top:12px;max-height:190px;overflow:auto;padding:12px;white-space:pre-wrap;"></div>
-        <div data-relay-actions hidden style="display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;">
+        <div data-relay-actions hidden style="display:none;flex-wrap:wrap;gap:7px;margin-top:12px;">
           <button type="button" data-relay-insert style="background:#00e982;border:1px solid #00e982;border-radius:10px;color:#04120b;font-size:12px;font-weight:750;min-height:36px;padding:8px 12px;cursor:pointer;">Insert</button>
           <button type="button" data-relay-copy style="background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:36px;padding:8px 12px;cursor:pointer;">Copy</button>
+          <button type="button" data-relay-tone style="background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:36px;padding:8px 12px;cursor:pointer;">Change tone</button>
           <button type="button" data-relay-startover style="background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:36px;padding:8px 12px;cursor:pointer;">Start over</button>
         </div>
+        <div data-relay-tone-label hidden style="color:#8fa096;font-size:11px;line-height:1.4;margin-top:8px;"></div>
         <div data-relay-refine-wrap hidden style="margin-top:12px;">
           <textarea data-relay-refine maxlength="1000" placeholder="Refine this draft…" style="width:100%;min-height:64px;background:#171e1a;border:1px solid #34443b;border-radius:12px;color:#f2f7f3;padding:10px 11px;line-height:1.45;resize:vertical;display:block;box-sizing:border-box;"></textarea>
           <button type="button" data-relay-refine-button style="margin-top:7px;width:100%;background:#172019;border:1px solid #3a4d42;border-radius:10px;color:#e9f1eb;font-size:12px;font-weight:750;min-height:36px;cursor:pointer;">Refine</button>
@@ -923,10 +1095,11 @@
 
     const direction = topBridge.querySelector('[data-relay-direction]');
     const create = topBridge.querySelector('[data-relay-create]');
-    const promptBtn = topBridge.querySelector('[data-relay-prompt]');
+    const suggest = topBridge.querySelector('[data-relay-suggest]');
     const closeBtn = topBridge.querySelector('[data-relay-close]');
     const insert = topBridge.querySelector('[data-relay-insert]');
     const copy = topBridge.querySelector('[data-relay-copy]');
+    const bridgeTone = topBridge.querySelector('[data-relay-tone]');
     const start = topBridge.querySelector('[data-relay-startover]');
     const bridgeRefine = topBridge.querySelector('[data-relay-refine]');
     const bridgeRefineButton = topBridge.querySelector('[data-relay-refine-button]');
@@ -934,31 +1107,51 @@
     direction.addEventListener('input', () => {
       directionInput.value = direction.value;
       updateDraftAvailability();
+      create.disabled = busy || (!direction.value.trim() && emptyFieldText(snapshot?.text));
     });
     create.addEventListener('click', () => {
       directionInput.value = direction.value;
-      draftButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      requestDraftGeneration();
     });
-    promptBtn.addEventListener('click', () => {
-      const value = window.prompt('What do you want Relay to write?', direction.value || '');
-      if (value === null) return;
-      direction.value = value;
-      directionInput.value = value;
-      updateDraftAvailability();
-      if (value.trim()) draftButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    suggest.addEventListener('click', requestSuggestions);
     closeBtn.addEventListener('click', () => resetPanel());
-    insert.addEventListener('click', () => insertButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    copy.addEventListener('click', () => copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    start.addEventListener('click', () => startOverButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    insert.addEventListener('click', requestInsert);
+    copy.addEventListener('click', () => { void copyDraft(); });
+    bridgeTone.addEventListener('click', requestToneChange);
+    start.addEventListener('click', startOver);
     bridgeRefineButton.addEventListener('click', () => {
       const value = bridgeRefine.value.trim();
       if (!value) return;
-      refineInput.value = value;
-      bridgeRefine.value = '';
-      refineBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      requestRefinement(value);
     });
     return topBridge;
+  }
+
+  function positionTopBridge(bridge) {
+    if (!(bridge instanceof HTMLElement) || bridge.style.display === 'none') return;
+    const source = editor || snapshot?.editor;
+    const modal = source instanceof HTMLElement
+      ? source.closest('[role="dialog"], dialog')
+      : document.querySelector('[role="dialog"], dialog');
+    const anchor = modal instanceof HTMLElement ? modal : source;
+    if (!(anchor instanceof HTMLElement)) return;
+    const anchorRect = anchor.getBoundingClientRect();
+    const bridgeRect = bridge.getBoundingClientRect();
+    const width = bridgeRect.width || Math.min(380, window.innerWidth - 24);
+    const height = bridgeRect.height || Math.min(520, window.innerHeight - 24);
+    const gap = 12;
+    const clampLeft = value => Math.max(12, Math.min(window.innerWidth - width - 12, value));
+    const clampTop = value => Math.max(12, Math.min(window.innerHeight - height - 12, value));
+    const rightSpace = window.innerWidth - anchorRect.right - gap;
+    const leftSpace = anchorRect.left - gap;
+    let left;
+    if (rightSpace >= width) left = anchorRect.right + gap;
+    else if (leftSpace >= width) left = anchorRect.left - width - gap;
+    else left = anchorRect.left + (anchorRect.width / 2) < window.innerWidth / 2
+      ? window.innerWidth - width - 12
+      : 12;
+    bridge.style.left = `${clampLeft(left)}px`;
+    bridge.style.top = `${clampTop(anchorRect.top)}px`;
   }
 
   function syncTopBridge() {
@@ -972,27 +1165,39 @@
     const statusEl = bridge.querySelector('[data-relay-status]');
     const previewEl = bridge.querySelector('[data-relay-preview]');
     const actionsEl = bridge.querySelector('[data-relay-actions]');
+    const toneLabelEl = bridge.querySelector('[data-relay-tone-label]');
     const create = bridge.querySelector('[data-relay-create]');
-    const promptBtn = bridge.querySelector('[data-relay-prompt]');
+    const composeActionsEl = bridge.querySelector('[data-relay-compose-actions]');
+    const suggest = bridge.querySelector('[data-relay-suggest]');
     const refineWrapEl = bridge.querySelector('[data-relay-refine-wrap]');
     const refineEl = bridge.querySelector('[data-relay-refine]');
+    const refineButtonEl = bridge.querySelector('[data-relay-refine-button]');
+    const actionButtons = bridge.querySelectorAll('[data-relay-actions] button');
     const facebookKind = facebookComposerKind(editor || snapshot?.editor);
     const reply = isReplyComposer();
 
     if (generatedDraft) {
       questionEl.textContent = reply ? 'Reply ready' : facebookKind === 'post' ? 'Post ready' : 'Draft ready';
       direction.hidden = true;
-      create.hidden = true;
-      promptBtn.hidden = true;
+      composeActionsEl.hidden = true;
       previewEl.hidden = false;
       previewEl.textContent = generatedDraft;
       actionsEl.hidden = false;
       actionsEl.style.display = 'flex';
+      toneLabelEl.hidden = false;
+      toneLabelEl.textContent = `${TONES[toneIndex][1]} tone · Review before inserting`;
       refineWrapEl.hidden = false;
       refineEl.placeholder = reply ? 'Refine this reply…' : facebookKind === 'post' ? 'Refine this post…' : 'Refine this draft…';
-      statusEl.textContent = reply
+      refineEl.disabled = busy;
+      refineButtonEl.disabled = busy;
+      for (const button of actionButtons) button.disabled = busy;
+      const sourceStatus = clean(status.textContent, 300);
+      const readyStatus = reply
         ? 'Reply ready — not sent. Insert writes into the comment field.'
-        : facebookKind === 'post' ? 'Post ready — not posted. Insert writes into the post field.' : 'Ready — not sent. Insert writes into the website field.';
+        : facebookKind === 'post'
+          ? 'Post ready — not posted. Insert writes into the post field.'
+          : 'Ready — not sent. Insert writes into the website field.';
+      statusEl.textContent = busy ? 'Relay is drafting…' : sourceStatus || readyStatus;
     } else {
       questionEl.textContent = reply
         ? 'What should this reply say?'
@@ -1001,20 +1206,32 @@
       direction.placeholder = reply
         ? 'What you need to achieve or situation to navigate…'
         : facebookKind === 'post' ? 'Describe the post you want to create…' : 'Short instruction…';
-      create.hidden = false;
-      promptBtn.hidden = false;
+      composeActionsEl.hidden = false;
+      create.textContent = busy ? 'Relay is drafting…' : 'Create draft';
+      suggest.hidden = !reply;
+      suggest.disabled = busy || !hasConversationContext();
       previewEl.hidden = true;
       actionsEl.hidden = true;
+      actionsEl.style.display = 'none';
+      toneLabelEl.hidden = true;
+      toneLabelEl.textContent = '';
       refineWrapEl.hidden = true;
       refineEl.value = '';
       if (direction.value !== directionInput.value) direction.value = directionInput.value;
-      statusEl.textContent = busy ? 'Relay is drafting…' : 'Type here. This window stays above the site composer.';
+      create.disabled = busy || (!direction.value.trim() && emptyFieldText(snapshot.text));
+      const sourceStatus = clean(status.textContent, 300);
+      statusEl.textContent = busy
+        ? 'Relay is drafting…'
+        : sourceStatus && sourceStatus !== 'Type in the Relay window beside the site composer.'
+          ? sourceStatus
+          : 'Type here. This window stays above the site composer.';
     }
 
-    bridge.style.display = 'block';
+    if (bridge.style.display !== 'block') bridge.style.display = 'block';
     try {
       if (typeof bridge.showPopover === 'function' && !bridge.matches(':popover-open')) bridge.showPopover();
     } catch {}
+    positionTopBridge(bridge);
     if (!generatedDraft && !busy) {
       setTimeout(() => {
         try { direction.focus({ preventScroll: true }); } catch { try { direction.focus(); } catch {} }
@@ -1071,6 +1288,8 @@
     if (!(target instanceof HTMLElement)) return false;
     const facebookKind = facebookComposerKind(target);
     if (facebookKind) return facebookKind === 'reply';
+    const linkedinKind = linkedinComposerKind(target);
+    if (linkedinKind === 'post') return false;
     const meta = fieldMetadata(target).toLowerCase();
     const placeholder = String(target.getAttribute?.('placeholder') || target.getAttribute?.('title') || '').toLowerCase();
     const aria = String(target.getAttribute?.('aria-label') || '').toLowerCase();
@@ -1160,7 +1379,8 @@
     const hasText = !emptyFieldText(text);
     const reply = isReplyComposer();
     const facebookKind = facebookComposerKind(editor || snapshot?.editor);
-    const post = facebookKind === 'post';
+    const linkedinKind = linkedinComposerKind(editor || snapshot?.editor);
+    const post = facebookKind === 'post' || linkedinKind === 'post';
     actionRow.classList.add('visible');
     suggestButton.hidden = hasText || !reply;
     question.textContent = hasText
@@ -1174,7 +1394,7 @@
     draftButton.textContent = hasText ? 'Improve' : 'Create draft';
     if (!hasText) {
       if (needsModalInert()) {
-        status.textContent = 'Type in the Relay window above the site modal, or use browser prompt.';
+        status.textContent = 'Type in the Relay window beside the site composer.';
         openTopLayerComposer();
       } else {
         const hint = contextHint();
@@ -1218,7 +1438,7 @@
     suggestButton.disabled = busy || Boolean(hasDraft) || (!hasDirection && !hasConversationContext());
     if (!generatedDraft && !busy && !hasDirection && !hasDraft && wantsInstructionCapture()) {
       if (needsModalInert()) {
-        status.textContent = 'Type in the Relay window above the site modal, or use browser prompt.';
+        status.textContent = 'Type in the Relay window beside the site composer.';
       } else {
         status.textContent = contextHint() || (isReplyComposer()
           ? 'Suggest replies uses the recent conversation, or add an instruction for a specific outcome.'
@@ -1292,7 +1512,8 @@
   function showDraft(draft) {
     generatedDraft = draft;
     const reply = isReplyComposer();
-    const post = facebookComposerKind(editor || snapshot?.editor) === 'post';
+    const post = facebookComposerKind(editor || snapshot?.editor) === 'post'
+      || linkedinComposerKind(editor || snapshot?.editor) === 'post';
     question.textContent = snapshot?.text.trim()
       ? (reply ? 'Improved reply' : post ? 'Improved post' : 'Improved version')
       : (reply ? 'Reply ready' : post ? 'Post ready' : 'Draft ready');
@@ -1564,7 +1785,7 @@
       void track('generation_succeeded', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Relay could not create this draft.';
-      status.textContent = /emotion|gratitude|greeting|promise|placeholder|emoticon|currency|number|date/i.test(message)
+      const visibleError = /emotion|gratitude|greeting|promise|placeholder|emoticon|currency|number|date/i.test(message)
         ? `${message} Try a clearer instruction, or Change tone after a successful draft.`
         : message;
       if (snapshot && !snapshot.text.trim()) {
@@ -1573,6 +1794,10 @@
         actionRow.classList.add('visible');
         updateDraftAvailability();
       }
+      // updateDraftAvailability may refresh ordinary helper copy. Restore the
+      // actual failure afterward so the top-layer Facebook panel cannot make a
+      // failed request look like an unresponsive button.
+      status.textContent = visibleError;
       void track('generation_failed', 'error');
     } finally {
       setBusy(false);
@@ -1594,7 +1819,26 @@
       temporary.remove();
     }
     status.textContent = 'Copied — not sent';
+    syncTopBridge();
     void track('copied', 'success');
+  }
+
+  function requestRefinement(instruction = refineInput.value.trim()) {
+    if (!snapshot || busy || !generatedDraft) return;
+    const more = String(instruction || '').trim();
+    if (!more) return;
+    refineInput.value = '';
+    const bridgeRefine = topBridge?.querySelector('[data-relay-refine]');
+    if (bridgeRefine) bridgeRefine.value = '';
+    userDirection = more;
+    currentGoal = 'improve_text';
+    void generate({ draftBase: generatedDraft });
+  }
+
+  function requestToneChange() {
+    if (!generatedDraft || busy) return;
+    toneIndex = (toneIndex + 1) % TONES.length;
+    void generate({ isToneRetry: true, clarification: clarificationAnswer });
   }
 
   // Keep modal composers (Facebook Lexical, etc.) from closing when Relay is used.
@@ -1680,7 +1924,7 @@
     updateDraftAvailability();
   });
 
-  draftButton.addEventListener('click', () => {
+  function requestDraftGeneration() {
     if (!snapshot || busy) return;
     refreshSnapshotFromPage();
     userDirection = directionInput.value.trim();
@@ -1691,14 +1935,15 @@
     clarificationAnswer = '';
     void track('goal_selected');
     void generate();
-  });
+  }
 
-  suggestButton.addEventListener('click', () => {
+  function requestSuggestions() {
     if (!snapshot || busy) return;
     refreshSnapshotFromPage();
     userDirection = directionInput.value.trim();
     if (!userDirection && !hasConversationContext()) {
-      status.textContent = 'Open a WhatsApp conversation with visible messages, then try Suggest replies again.';
+      status.textContent = 'Open the conversation with visible messages, then try Suggest replies again.';
+      syncTopBridge();
       return updateDraftAvailability();
     }
     holdRelayFocus = false;
@@ -1707,19 +1952,14 @@
     clarificationAnswer = '';
     void track('goal_selected');
     void generate();
-  });
+  }
+
+  draftButton.addEventListener('click', requestDraftGeneration);
+  suggestButton.addEventListener('click', requestSuggestions);
 
   backBtn.addEventListener('click', startOver);
 
-  refineBtn.addEventListener('click', () => {
-    if (!snapshot || busy || !generatedDraft) return;
-    const more = refineInput.value.trim();
-    if (!more) return;
-    refineInput.value = '';
-    userDirection = more;
-    currentGoal = 'improve_text';
-    void generate({ draftBase: generatedDraft });
-  });
+  refineBtn.addEventListener('click', () => requestRefinement());
 
   continueButton.addEventListener('click', () => {
     const answer = clarificationInput.value.trim();
@@ -1737,7 +1977,7 @@
   });
 
   let insertInFlight = false;
-  insertButton.addEventListener('click', () => {
+  function requestInsert() {
     if (!generatedDraft || insertInFlight) return;
     insertInFlight = true;
     holdRelayFocus = false;
@@ -1751,8 +1991,10 @@
       return;
     }
     editor = liveEditor;
-    if (snapshot) snapshot.editor = liveEditor;
-    else snapshot = { editor: liveEditor, text: '', context: fieldContext(liveEditor) };
+    if (snapshot) {
+      snapshot.editor = liveEditor;
+      snapshot.text = normalizeEditorText(readEditorMessage(liveEditor)).trim();
+    } else snapshot = { editor: liveEditor, text: '', context: fieldContext(liveEditor) };
     undoState = {
       editor: liveEditor,
       original: snapshot.text,
@@ -1783,7 +2025,9 @@
     render();
     void track('inserted', 'success');
     setTimeout(() => { insertInFlight = false; }, 500);
-  });
+  }
+
+  insertButton.addEventListener('click', requestInsert);
 
   undoButton.addEventListener('click', () => {
     if (!undoState) return;
@@ -1812,11 +2056,7 @@
   copyButton.addEventListener('click', () => { void copyDraft(); });
   startOverButton.addEventListener('click', startOver);
   doneButton.addEventListener('click', () => resetPanel());
-  toneButton.addEventListener('click', () => {
-    if (!generatedDraft || busy) return;
-    toneIndex = (toneIndex + 1) % TONES.length;
-    void generate({ isToneRetry: true, clarification: clarificationAnswer });
-  });
+  toneButton.addEventListener('click', requestToneChange);
   minimizeButton.addEventListener('click', () => {
     holdRelayFocus = false;
     releaseModalInert();
@@ -1868,6 +2108,7 @@
   }, true);
 
   function handleInstructionKeydown(event) {
+    if (topBridge?.contains(event.target)) return;
     if (event.key === 'Escape' && panelOpen) {
       resetPanel();
       return;
@@ -1927,8 +2168,18 @@
   // document or each key would be applied twice.
   window.addEventListener('keydown', handleInstructionKeydown, true);
 
-  window.addEventListener('scroll', positionUi, { passive: true });
-  window.addEventListener('resize', positionUi, { passive: true });
+  function positionRelayUi() {
+    positionUi();
+    if (topBridge) positionTopBridge(topBridge);
+  }
+
+  window.addEventListener('scroll', positionRelayUi, { passive: true });
+  window.addEventListener('resize', positionRelayUi, { passive: true });
+  // Facebook and other Meta pages mutate large parts of the document while a
+  // composer is open. Rendering on every mutation can create a feedback loop
+  // (Relay overlay mutation -> observer -> render) and freeze the host page.
+  // Focus/input events already discover active editors; this observer is only
+  // needed to preserve the session when the host removes that editor.
   new MutationObserver(() => {
     if (editor && !isAttached(editor)) {
       if (panelOpen || generatedDraft || undoState) {
@@ -1936,8 +2187,6 @@
         return;
       }
       resetPanel(false);
-    } else {
-      render();
     }
   }).observe(document.documentElement, { childList: true, subtree: true });
 })();
