@@ -26,6 +26,15 @@ bg = (root / 'extension' / 'background.js').read_text()
 for local_origin in ('http://127.0.0.1:8787', 'http://192.168.1.16:8787'):
     bg = bg.replace(f'{local_origin}/api/compose', 'https://relay.durgaai.com/api/compose')
     bg = bg.replace(f'{local_origin}/api/events', 'https://relay.durgaai.com/api/events')
+local_test_block = """      const requestBody = DEV_API_URL.startsWith('http://') && url === DEV_API_URL && isCompose
+        ? { ...body, planCode: 'RELAY-PRO-LOCALTEST' }
+        : body;
+      return await postJson(url, requestBody);"""
+if local_test_block not in bg:
+    raise SystemExit('local test allowance block not found in background.js')
+bg = bg.replace(local_test_block, "      return await postJson(url, body);")
+if 'RELAY-PRO-LOCALTEST' in bg or 'http://192.168.1.16:8787' in bg or 'http://127.0.0.1:8787' in bg:
+    raise SystemExit('production extension background still contains local-only configuration')
 (stage / 'background.js').write_text(bg)
 manifest = {
   "manifest_version": 3,

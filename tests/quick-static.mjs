@@ -79,6 +79,9 @@ assert.match(extensionSource, /chrome\.runtime\.connect/, 'Composer must keep a 
 assert.match(extensionBackground, /DEV_API_URL\.startsWith\('http:\/\/'\).*RELAY-PRO-LOCALTEST/s, 'Local test allowance must be restricted to the HTTP development API');
 assert.match(extensionSource, /FALLBACK_API_URL|relay\.durgaai\.com\/api\/compose/, 'Composer needs an HTTPS fallback when the background bridge is down');
 assert.match(extensionSource, /facebookReplyMentionPlaceholder/, 'Facebook reply mentions must not be treated as user-authored text');
+assert.match(extensionSource, /linkedinReplyMentionPlaceholder/, 'LinkedIn reply mentions must not be treated as user-authored text');
+assert.match(extensionSource, /linkedinSpecificReplyContext/, 'LinkedIn specific-comment context reader is missing');
+assert.match(extensionSource, /queueAddedEditorDiscovery/, 'Dynamically opened empty social composers must be discovered before typing');
 assert.match(extensionSource, /data-relay-tone/, 'Top-layer social composer must expose tone control after drafting');
 assert.doesNotMatch(extensionSource, /Use browser prompt instead/, 'Top-layer social composer must not expose the obsolete browser prompt fallback');
 assert.match(backend, /composerKind === 'post'/, 'Social post drafting guidance is missing');

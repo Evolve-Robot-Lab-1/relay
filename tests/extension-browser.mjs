@@ -64,6 +64,41 @@ const fixture = createHttpServer((request, response) => {
     </body></html>`);
     return;
   }
+  if (request.url === '/linkedin-post') {
+    response.end(`<!doctype html><html><body>
+      <button id="linkedin-start-post">Start a post</button>
+    </body></html>`);
+    return;
+  }
+  if (request.url === '/linkedin-comment') {
+    response.end(`<!doctype html><html><body>
+      <article class="feed-shared-update-v2" style="width:620px;min-height:400px">
+        <div class="update-components-text">We are launching our robotics workshop next week.</div>
+        <div class="comments-comment-item"><a href="/in/asha-rao">Asha Rao</a><div>What age group is this for?</div></div>
+        <form class="comments-comment-box" aria-label="Add a comment">
+          <div id="linkedin-comment" class="ql-editor" role="textbox" contenteditable="true" aria-label="Add a comment" style="width:560px;min-height:60px"></div>
+        </form>
+      </article>
+    </body></html>`);
+    return;
+  }
+  if (request.url === '/linkedin-comment-reply') {
+    response.end(`<!doctype html><html><body>
+      <article class="feed-shared-update-v2" style="width:620px;min-height:500px">
+        <div class="update-components-text">We are launching our robotics workshop next week.</div>
+        <div class="comments-comment-item"><a href="/in/other-person">Other Person</a><div>Congratulations!</div></div>
+        <div class="comments-comment-item">
+          <span>Vikram B.</span>
+          <div>What age group is this for?</div>
+          <form class="comments-reply-box" aria-label="Add a reply">
+            <div id="linkedin-comment-reply" class="ql-editor" role="textbox" contenteditable="true" aria-label="Add a reply" style="width:540px;min-height:60px">Vikram B.</div>
+            <button type="button">Reply</button>
+          </form>
+        </div>
+      </article>
+    </body></html>`);
+    return;
+  }
   response.end(`<!doctype html><html><body>
     <main><p id="incoming">Could you send the proposal by Friday?</p>
       <label for="compose">Your reply</label><textarea id="compose" placeholder="Write a thoughtful reply"></textarea>
@@ -260,7 +295,7 @@ try {
   const longAnswerVisible = await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').classList.contains('visible')`);
   assert.equal(longAnswerVisible, true, 'Long writing inputs should show Relay');
 
-  const loadFacebookFixture = async path => {
+  const loadSocialFixture = async (path, hostname) => {
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${fixturePort}${path}` });
     for (let attempt = 0; attempt < 200; attempt += 1) {
       if (await evaluate(`document.readyState === 'complete' && location.pathname === ${JSON.stringify(path)}`)) break;
@@ -296,8 +331,8 @@ try {
       catch { globalThis.chrome.runtime = runtime; }
     })()`);
     // Exercise the exact artifact while making only the hostname deterministic.
-    const facebookSource = contentSource.replaceAll('location.hostname.toLowerCase()', "'facebook.com'");
-    await evaluate(`(0, eval)(${JSON.stringify(facebookSource)})`);
+    const socialSource = contentSource.replaceAll('location.hostname.toLowerCase()', JSON.stringify(hostname));
+    await evaluate(`(0, eval)(${JSON.stringify(socialSource)})`);
     for (let attempt = 0; attempt < 200; attempt += 1) {
       if (await evaluate(`Boolean(document.querySelector('#relay-extension-host')?.shadowRoot)`)) return;
       if (attempt === 199) throw new Error(`Relay did not load for ${path}.`);
@@ -305,7 +340,7 @@ try {
     }
   };
 
-  await loadFacebookFixture('/facebook-post');
+  await loadSocialFixture('/facebook-post', 'facebook.com');
   await evaluate(`(() => {
     const field=document.querySelector('#facebook-post');
     field.focus();
@@ -409,7 +444,7 @@ try {
     'Facebook insertion must replace the editor exactly once'
   );
 
-  await loadFacebookFixture('/facebook-reply');
+  await loadSocialFixture('/facebook-reply', 'facebook.com');
   await evaluate(`(() => {
     const field=document.querySelector('#facebook-reply');
     field.focus();
@@ -439,7 +474,7 @@ try {
     'Facebook suggestions must use the direct generation path'
   );
 
-  await loadFacebookFixture('/facebook-typed-reply');
+  await loadSocialFixture('/facebook-typed-reply', 'facebook.com');
   await evaluate(`(() => {
     const field=document.querySelector('#facebook-typed-reply');
     field.focus();
@@ -458,6 +493,148 @@ try {
     delay(100),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Facebook mutation handling stalled')), 1000))
   ]);
+
+  await loadSocialFixture('/linkedin-post', 'linkedin.com');
+  await evaluate(`(() => {
+    document.querySelector('#linkedin-start-post').addEventListener('click', () => setTimeout(() => {
+      const modal=document.createElement('div');
+      modal.className='artdeco-modal share-creation-state';
+      modal.setAttribute('role','dialog');
+      modal.setAttribute('aria-label','Create a post');
+      modal.style.cssText='position:fixed;left:220px;top:70px;width:760px;height:540px';
+      modal.innerHTML='<h2>Create a post</h2><div class="share-creation-state__text-editor"><div id="linkedin-post" class="ql-editor" role="textbox" contenteditable="true" aria-label="Text editor for creating content" style="width:720px;min-height:130px"></div></div>';
+      document.body.append(modal);
+    }, 40));
+    document.querySelector('#linkedin-start-post').click();
+  })()`);
+  await delay(180);
+  const linkedinDetected = await evaluate(`(() => {
+    const root=document.querySelector('#relay-extension-host').shadowRoot;
+    return {chip:root.querySelector('.chip').classList.contains('visible'),text:document.querySelector('#linkedin-post').innerText};
+  })()`);
+  assert.equal(linkedinDetected.chip, true, 'LinkedIn empty post compose must be detected before typing');
+  assert.equal(linkedinDetected.text, '');
+  await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click()`);
+  await delay(50);
+  const linkedinPostOpen = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const dialog=document.querySelector('[role=dialog]').getBoundingClientRect();
+    const box=bridge.getBoundingClientRect();
+    return {
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      suggestHidden:bridge.querySelector('[data-relay-suggest]').hidden,
+      createDisabled:bridge.querySelector('[data-relay-create]').disabled,
+      overlaps:!(box.right<=dialog.left||box.left>=dialog.right||box.bottom<=dialog.top||box.top>=dialog.bottom)
+    };
+  })()`);
+  assert.equal(linkedinPostOpen.question, 'What do you want to post?');
+  assert.equal(linkedinPostOpen.suggestHidden, true, 'LinkedIn post compose must not offer reply suggestions');
+  assert.equal(linkedinPostOpen.createDisabled, true);
+  assert.equal(linkedinPostOpen.overlaps, false, 'Relay must fit beside the LinkedIn post modal');
+  const linkedinFocusTrapTyping = await evaluate(`(() => {
+    const field=document.querySelector('#linkedin-post');
+    field.focus();
+    for (const key of ['h','i']) field.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+    const bridgeInput=document.querySelector('#relay-top-bridge [data-relay-direction]');
+    const value=bridgeInput.value;
+    bridgeInput.value='';
+    bridgeInput.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward',data:null}));
+    return value;
+  })()`);
+  assert.equal(linkedinFocusTrapTyping, 'hi', 'Relay must capture typing even when LinkedIn steals focus back to its modal');
+  const linkedinComposerInteractive = await evaluate(`(() => {
+    const field=document.querySelector('#linkedin-post');
+    field.focus();
+    field.textContent='rough website draft';
+    field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'rough website draft'}));
+    return {
+      inert:Boolean(field.closest('[inert]')),
+      active:document.activeElement===field,
+      text:field.innerText
+    };
+  })()`);
+  assert.equal(linkedinComposerInteractive.inert, false, 'Relay must not make the LinkedIn modal inert');
+  assert.equal(linkedinComposerInteractive.active, true, 'The user must be able to return focus to LinkedIn');
+  assert.equal(linkedinComposerInteractive.text, 'rough website draft', 'The LinkedIn composer must remain editable while Relay is open');
+  await evaluate(`(() => {
+    const field=document.querySelector('#linkedin-post');
+    field.textContent='';
+    field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward',data:null}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip')?.click();
+  })()`);
+  await delay(50);
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-direction]');
+    input.value='announce robotics workshop next week';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-create]').click();
+  })()`);
+  await delay(100);
+  assert.equal(
+    await evaluate(`document.querySelector('#relay-top-bridge [data-relay-question]').textContent`),
+    'Post ready',
+    'LinkedIn post generation must use the post flow'
+  );
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-insert]').click()`);
+  await delay(100);
+  assert.equal(
+    await evaluate(`document.querySelector('#linkedin-post').innerText`),
+    'Do it now.',
+    'LinkedIn post insertion must write exactly once'
+  );
+
+  await loadSocialFixture('/linkedin-comment', 'linkedin.com');
+  await evaluate(`(() => {
+    const field=document.querySelector('#linkedin-comment');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  const linkedinCommentOpen = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    return {
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      suggestHidden:bridge.querySelector('[data-relay-suggest]').hidden,
+      suggestDisabled:bridge.querySelector('[data-relay-suggest]').disabled
+    };
+  })()`);
+  assert.equal(linkedinCommentOpen.question, 'What should this reply say?');
+  assert.equal(linkedinCommentOpen.suggestHidden, false, 'LinkedIn post comments must offer suggestions');
+  assert.equal(linkedinCommentOpen.suggestDisabled, false, 'LinkedIn post context must enable suggestions');
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-suggest]').click()`);
+  await delay(100);
+  assert.match(
+    await evaluate(`globalThis.__relayComposeRequests.at(-1)?.context?.nearbyText || ''`),
+    /LinkedIn post:\s*We are launching our robotics workshop next week\./,
+    'LinkedIn top-level comments must include the post context'
+  );
+
+  await loadSocialFixture('/linkedin-comment-reply', 'linkedin.com');
+  await evaluate(`(() => {
+    const field=document.querySelector('#linkedin-comment-reply');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  const linkedinSpecificReply = await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    return {
+      question:bridge.querySelector('[data-relay-question]').textContent,
+      suggestHidden:bridge.querySelector('[data-relay-suggest]').hidden,
+      suggestDisabled:bridge.querySelector('[data-relay-suggest]').disabled
+    };
+  })()`);
+  assert.equal(linkedinSpecificReply.question, 'What should this reply say?', 'A LinkedIn mention is not authored reply text');
+  assert.equal(linkedinSpecificReply.suggestHidden, false);
+  assert.equal(linkedinSpecificReply.suggestDisabled, false);
+  await evaluate(`document.querySelector('#relay-top-bridge [data-relay-suggest]').click()`);
+  await delay(100);
+  const linkedinSpecificContext = await evaluate(`globalThis.__relayComposeRequests.at(-1)?.context?.nearbyText || ''`);
+  assert.match(linkedinSpecificContext, /^Replying to Vikram B\.'s LinkedIn comment:/, 'The exact LinkedIn comment must be first in context');
+  assert.match(linkedinSpecificContext, /What age group is this for\?/, 'The replied-to LinkedIn comment body must be captured');
   console.log('Relay extension browser checks passed.');
 } finally {
   cdp?.socket.close();

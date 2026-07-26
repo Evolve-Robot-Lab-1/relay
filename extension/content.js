@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const EDITOR_SELECTOR = 'textarea, input, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"][contenteditable], .ql-editor[contenteditable], [data-lexical-editor="true"]';
+  const EDITOR_SELECTOR = 'textarea, input, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"], .ql-editor, .ProseMirror, [data-lexical-editor="true"]';
   const TONES = [
     ['natural', 'Natural'],
     ['warm', 'Warm'],
@@ -23,6 +23,7 @@
   let undoState = null;
   let rememberedSelection = '';
   let rememberedSelectionAt = 0;
+  const userEditedEditors = new WeakSet();
 
   const host = document.createElement('div');
   host.id = 'relay-extension-host';
@@ -262,7 +263,7 @@
         message = normalizeEditorText(clone.innerText || clone.textContent || '');
       }
     }
-    return facebookReplyMentionPlaceholder(target, message) ? '' : message;
+    return facebookReplyMentionPlaceholder(target, message) || linkedinReplyMentionPlaceholder(target, message) ? '' : message;
   }
 
   function replaceMessageBeforeTemplate(target, text) {
@@ -620,13 +621,146 @@
     const labels = `${metadata} ${ancestorLabels}`.toLowerCase();
     if (/\b(?:write a message|send a message|type a message)\b/.test(labels)
       || target.closest('.msg-overlay-conversation-bubble, .msg-convo-wrapper')) return 'reply';
-    const dialog = target.closest('[role="dialog"], .artdeco-modal');
+    if (target.closest(
+      '.comments-comment-box, .comments-comment-item, .comments-reply-box, .comments-comment-texteditor, [data-view-name*="comment" i]'
+    ) || /\b(?:add a comment|comment on|reply to|add a reply|write a comment)\b/.test(labels)) return 'reply';
+    const dialog = target.closest('[role="dialog"], .artdeco-modal, .share-box, .share-creation-state');
     if (dialog) {
-      const dialogLabel = (dialog.getAttribute('aria-label') || dialog.getAttribute('data-modal-title') || '').toLowerCase();
-      if (/\b(?:create a post|start a post|write a post|share something|share an update)\b/.test(dialogLabel)) return 'post';
+      const dialogLabel = clean(
+        `${dialog.getAttribute('aria-label') || ''} ${dialog.getAttribute('data-modal-title') || ''} ${(dialog.innerText || '').slice(0, 500)}`,
+        700
+      ).toLowerCase();
+      if (/\b(?:create a post|start a post|write a post|share something|share an update|create post)\b/.test(dialogLabel)
+        || target.closest('.share-box, .share-creation-state, .share-creation-state__text-editor')) return 'post';
     }
-    const body = (document.body.innerText || '').slice(0, 300).toLowerCase();
-    if (/\b(?:start a post|share an update)\b/.test(body)) return 'post';
+    return '';
+  }
+
+  function linkedinReplyTargetName(target) {
+    if (!(target instanceof HTMLElement)) return '';
+    const labels = [];
+    let node = target;
+    for (let depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+      labels.push(
+        node.getAttribute?.('aria-label') || '',
+        node.getAttribute?.('data-placeholder') || '',
+        node.getAttribute?.('placeholder') || '',
+        node.getAttribute?.('title') || ''
+      );
+      if (node.matches?.('.comments-comment-item, .feed-shared-update-v2, [role="dialog"], article')) break;
+    }
+    for (const label of labels) {
+      const normalized = clean(label, 240);
+      const match = normalized.match(/\brepl(?:y|ying)\s+to\s+@?(.+?)(?:['’]s\s+comment|[|·,:]|\s+-\s+|$)/i);
+      const name = clean(match?.[1], 120);
+      if (name && !/^(?:this|the|a)\s+(?:comment|post)$/i.test(name)) return name;
+    }
+    const editorText = clean(readEditor(target), 120).replace(/^@/, '');
+    if (!userEditedEditors.has(target) && linkedinHasReplySubmit(target) && linkedinDisplayNameLike(editorText)) return editorText;
+    return '';
+  }
+
+  function linkedinDisplayNameLike(value) {
+    const name = clean(value, 120).replace(/^@/, '');
+    return /^(?:[\p{Lu}][\p{L}'’.-]{0,40})(?:\s+[\p{Lu}][\p{L}'’.-]{0,40}){0,5}$/u.test(name);
+  }
+
+  function linkedinHasReplySubmit(target) {
+    if (!(target instanceof HTMLElement)) return false;
+    let node = target.parentElement;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      for (const button of node.querySelectorAll('button, [role="button"]')) {
+        if (target.contains(button)) continue;
+        const label = clean(
+          `${button.getAttribute?.('aria-label') || ''} ${button.innerText || button.textContent || ''}`,
+          80
+        );
+        if (/^reply$/i.test(label)) return true;
+      }
+      for (const labelNode of node.querySelectorAll('span, div')) {
+        if (labelNode.children.length) continue;
+        if (/^reply$/i.test(clean(labelNode.innerText || labelNode.textContent, 40))) return true;
+      }
+      if (node.matches?.('.comments-comment-item, .feed-shared-update-v2, article, [role="dialog"]')) break;
+    }
+    return false;
+  }
+
+  function linkedinReplyMentionPlaceholder(target, text) {
+    if (!(target instanceof HTMLElement) || !text || linkedinComposerKind(target) !== 'reply') return false;
+    const placeholder = clean(text, 120).replace(/^@/, '');
+    const replyTarget = linkedinReplyTargetName(target);
+    if (replyTarget && placeholder.toLocaleLowerCase() === replyTarget.toLocaleLowerCase()) return true;
+    const explicitMention = target.querySelector(
+      '[data-mention], [data-entity-urn], .ql-mention, [class*="mention" i], a[href*="/in/"]'
+    );
+    if (explicitMention) {
+      const mention = clean(explicitMention.innerText || explicitMention.textContent, 120).replace(/^@/, '');
+      if (mention && mention.toLocaleLowerCase() === placeholder.toLocaleLowerCase()) return true;
+    }
+    const scope = target.closest('.comments-comment-item, .feed-shared-update-v2, article, [role="dialog"]');
+    if (scope) {
+      const authorSelector = [
+        'a[href*="/in/"]',
+        '.comments-post-meta__name-text',
+        '.update-components-actor__name',
+        '[data-view-name*="profile" i]',
+        'strong',
+        'span[dir="ltr"]',
+        'span[dir="auto"]',
+        'span'
+      ].join(', ');
+      for (const candidate of scope.querySelectorAll(authorSelector)) {
+        if (!(candidate instanceof HTMLElement) || target.contains(candidate) || candidate.closest('[contenteditable]')) continue;
+        const author = clean(candidate.innerText || candidate.textContent, 120).replace(/^@/, '');
+        if (author && author.toLocaleLowerCase() === placeholder.toLocaleLowerCase()) return true;
+      }
+    }
+    let nearby = target.parentElement;
+    for (let depth = 0; nearby && depth < 10; depth += 1, nearby = nearby.parentElement) {
+      if (clean(nearby.innerText || nearby.textContent, 5000).length > 4000) break;
+      for (const candidate of nearby.querySelectorAll('a, strong, span, h3, h4')) {
+        if (target.contains(candidate) || candidate.closest('[contenteditable]')) continue;
+        const author = clean(candidate.innerText || candidate.textContent, 120).replace(/^@/, '');
+        if (author && author.toLocaleLowerCase() === placeholder.toLocaleLowerCase()) return true;
+      }
+    }
+    if (!userEditedEditors.has(target) && linkedinHasReplySubmit(target) && linkedinDisplayNameLike(placeholder)) return true;
+    const selection = window.getSelection();
+    const selectedWholeEditor = Boolean(
+      selection?.rangeCount
+      && target.contains(selection.anchorNode)
+      && clean(selection.toString(), 120).replace(/^@/, '').toLocaleLowerCase() === placeholder.toLocaleLowerCase()
+    );
+    return selectedWholeEditor && linkedinDisplayNameLike(placeholder);
+  }
+
+  function linkedinSpecificReplyContext(target) {
+    if (!(target instanceof HTMLElement)) return '';
+    const replyTarget = linkedinReplyTargetName(target)
+      || clean(readEditor(target), 120).replace(/^@/, '');
+    if (!replyTarget || !linkedinReplyMentionPlaceholder(target, readEditor(target))) return '';
+    let comment = target.closest('.comments-comment-item, [data-view-name*="comment" i], [role="listitem"]');
+    if (!comment) {
+      let node = target.parentElement;
+      for (let depth = 0; node && depth < 9; depth += 1, node = node.parentElement) {
+        if (node.matches?.('.feed-shared-update-v2, article, [role="dialog"]')) break;
+        const value = clean(node.innerText || node.textContent, 1800);
+        if (value.toLocaleLowerCase().includes(replyTarget.toLocaleLowerCase()) && linkedinHasReplySubmit(target)) {
+          comment = node;
+        }
+      }
+    }
+    if (comment instanceof HTMLElement) {
+      const clone = comment.cloneNode(true);
+      if (clone instanceof HTMLElement) {
+        for (const noise of clone.querySelectorAll('button, [role="button"], [contenteditable], form, svg, img')) noise.remove();
+        const value = clean(clone.innerText || clone.textContent, 1400);
+        if (value.length > replyTarget.length) {
+          return clean(`Replying to ${replyTarget}'s LinkedIn comment:\n${value}`, 1800);
+        }
+      }
+    }
     return '';
   }
 
@@ -939,8 +1073,34 @@
     }
 
     if (/linkedin\.com/.test(hostname)) {
-      const root = target.closest('.msg-overlay-conversation-bubble, .msg-convo-wrapper, [role="dialog"]') || document;
-      return recentItems(root.querySelectorAll('.msg-s-event-listitem, .msg-s-message-list__event, [data-view-name*="message" i]'), target, item => item.innerText, 6);
+      if (target.closest('.msg-overlay-conversation-bubble, .msg-convo-wrapper')) {
+        const root = target.closest('.msg-overlay-conversation-bubble, .msg-convo-wrapper, [role="dialog"]') || document;
+        return recentItems(root.querySelectorAll('.msg-s-event-listitem, .msg-s-message-list__event, [data-view-name*="message" i]'), target, item => item.innerText, 6);
+      }
+      if (linkedinComposerKind(target) === 'reply') {
+        const root = target.closest('.feed-shared-update-v2, article, [role="dialog"]') || document;
+        const specificReply = linkedinSpecificReplyContext(target);
+        const post = clean(
+          root.querySelector('.feed-shared-update-v2__description, .update-components-text, [data-test-id*="post" i], [data-view-name*="feed" i]')?.innerText,
+          1800
+        );
+        const comments = recentItems(
+          root.querySelectorAll('.comments-comment-item, [data-view-name*="comment" i], [role="listitem"]'),
+          target,
+          item => {
+            if (item.closest('[contenteditable]') || item.contains(target)) return '';
+            return item.innerText || item.textContent || '';
+          },
+          6
+        );
+        const threadContext = clean(
+          [post ? `LinkedIn post:\n${post}` : '', comments ? `Recent LinkedIn comments:\n${comments}` : ''].filter(Boolean).join('\n\n'),
+          4000
+        );
+        if (specificReply && threadContext) return clean(`${specificReply}\n\n${threadContext}`, 5000);
+        return specificReply || threadContext;
+      }
+      return '';
     }
 
     if (/(?:^|\.)reddit\.com$/.test(hostname)) {
@@ -1028,6 +1188,10 @@
   function armModalInert() {
     releaseModalInert();
     if (!needsModalInert()) return;
+    // LinkedIn keeps its post modal open while focus moves to Relay. Making
+    // the modal inert prevents the user from returning to or typing in the
+    // LinkedIn editor, so its top-layer bridge must not lock the site modal.
+    if (/(?:^|\.)linkedin\.com$/.test(location.hostname.toLowerCase())) return;
     const roots = document.querySelectorAll('[role="dialog"], dialog, [data-test-modal-id], .artdeco-modal');
     for (const root of roots) {
       if (!(root instanceof HTMLElement) || isRelayUi(root)) continue;
@@ -1129,6 +1293,10 @@
 
   function positionTopBridge(bridge) {
     if (!(bridge instanceof HTMLElement) || bridge.style.display === 'none') return;
+    const linkedin = /(?:^|\.)linkedin\.com$/.test(location.hostname.toLowerCase());
+    bridge.style.width = linkedin
+      ? 'min(288px,calc(100vw - 24px))'
+      : 'min(380px,calc(100vw - 24px))';
     const source = editor || snapshot?.editor;
     const modal = source instanceof HTMLElement
       ? source.closest('[role="dialog"], dialog')
@@ -1173,11 +1341,12 @@
     const refineEl = bridge.querySelector('[data-relay-refine]');
     const refineButtonEl = bridge.querySelector('[data-relay-refine-button]');
     const actionButtons = bridge.querySelectorAll('[data-relay-actions] button');
-    const facebookKind = facebookComposerKind(editor || snapshot?.editor);
+    const composerKind = facebookComposerKind(editor || snapshot?.editor)
+      || linkedinComposerKind(editor || snapshot?.editor);
     const reply = isReplyComposer();
 
     if (generatedDraft) {
-      questionEl.textContent = reply ? 'Reply ready' : facebookKind === 'post' ? 'Post ready' : 'Draft ready';
+      questionEl.textContent = reply ? 'Reply ready' : composerKind === 'post' ? 'Post ready' : 'Draft ready';
       direction.hidden = true;
       composeActionsEl.hidden = true;
       previewEl.hidden = false;
@@ -1187,25 +1356,25 @@
       toneLabelEl.hidden = false;
       toneLabelEl.textContent = `${TONES[toneIndex][1]} tone · Review before inserting`;
       refineWrapEl.hidden = false;
-      refineEl.placeholder = reply ? 'Refine this reply…' : facebookKind === 'post' ? 'Refine this post…' : 'Refine this draft…';
+      refineEl.placeholder = reply ? 'Refine this reply…' : composerKind === 'post' ? 'Refine this post…' : 'Refine this draft…';
       refineEl.disabled = busy;
       refineButtonEl.disabled = busy;
       for (const button of actionButtons) button.disabled = busy;
       const sourceStatus = clean(status.textContent, 300);
       const readyStatus = reply
         ? 'Reply ready — not sent. Insert writes into the comment field.'
-        : facebookKind === 'post'
+        : composerKind === 'post'
           ? 'Post ready — not posted. Insert writes into the post field.'
           : 'Ready — not sent. Insert writes into the website field.';
       statusEl.textContent = busy ? 'Relay is drafting…' : sourceStatus || readyStatus;
     } else {
       questionEl.textContent = reply
         ? 'What should this reply say?'
-        : facebookKind === 'post' ? 'What do you want to post?' : 'What do you want to write?';
+        : composerKind === 'post' ? 'What do you want to post?' : 'What do you want to write?';
       direction.hidden = false;
       direction.placeholder = reply
         ? 'What you need to achieve or situation to navigate…'
-        : facebookKind === 'post' ? 'Describe the post you want to create…' : 'Short instruction…';
+        : composerKind === 'post' ? 'Describe the post you want to create…' : 'Short instruction…';
       composeActionsEl.hidden = false;
       create.textContent = busy ? 'Relay is drafting…' : 'Create draft';
       suggest.hidden = !reply;
@@ -1261,6 +1430,13 @@
   }
 
   function activeRelayField() {
+    const bridgeDirection = topBridge?.querySelector('[data-relay-direction]');
+    if (
+      bridgeDirection instanceof HTMLTextAreaElement
+      && topBridge?.style.display === 'block'
+      && !generatedDraft
+      && !busy
+    ) return bridgeDirection;
     if (clarificationBox.classList.contains('visible')) return clarificationInput;
     if (directionWrap.classList.contains('visible')) return directionInput;
     return null;
@@ -1394,6 +1570,7 @@
     draftButton.textContent = hasText ? 'Improve' : 'Create draft';
     if (!hasText) {
       if (needsModalInert()) {
+        holdRelayFocus = false;
         status.textContent = 'Type in the Relay window beside the site composer.';
         openTopLayerComposer();
       } else {
@@ -1401,8 +1578,8 @@
         status.textContent = hint || (reply ? 'Describe the situation for suggestions, or write an instruction.' : '');
         closeTopBridge();
         releaseModalInert();
+        setTimeout(() => focusRelayField(directionInput), 0);
       }
-      setTimeout(() => focusRelayField(directionInput), 0);
     } else {
       holdRelayFocus = false;
       releaseModalInert();
@@ -2102,6 +2279,7 @@
     const changed = editorFromEvent(event);
     if (!changed) return;
     editor = changed;
+    if (event.isTrusted) userEditedEditors.add(changed);
     if (internalWrite) return render();
     if (snapshot) resetPanel();
     render();
@@ -2173,6 +2351,71 @@
     if (topBridge) positionTopBridge(topBridge);
   }
 
+  let editorDiscoveryQueued = false;
+
+  function liveSocialModalEditor() {
+    const roots = Array.from(document.querySelectorAll(
+      '[role="dialog"], dialog, .artdeco-modal, .share-box, .share-creation-state'
+    )).reverse();
+    for (const root of roots) {
+      if (!(root instanceof HTMLElement) || isRelayUi(root)) continue;
+      const candidates = collectEditors(root);
+      const social = candidates.find(candidate => facebookComposerKind(candidate) || linkedinComposerKind(candidate));
+      if (social) return social;
+    }
+    if (/(?:^|\.)linkedin\.com$/.test(location.hostname.toLowerCase())) {
+      const candidates = collectEditors(document);
+      const post = candidates.find(candidate => linkedinComposerKind(candidate) === 'post');
+      if (post) return post;
+      const reply = candidates.find(candidate => linkedinComposerKind(candidate) === 'reply');
+      if (reply) return reply;
+    }
+    return null;
+  }
+
+  function adoptDiscoveredEditor(next) {
+    if (!next || next === editor || !isAttached(next)) return;
+    if (panelOpen) resetPanel(false);
+    editor = next;
+    render();
+  }
+
+  function queueAddedEditorDiscovery(addedNodes) {
+    if (editorDiscoveryQueued) return;
+    const roots = Array.from(addedNodes || []).filter(node => node instanceof Element && !isRelayUi(node));
+    if (!roots.length) return;
+    editorDiscoveryQueued = true;
+    requestAnimationFrame(() => {
+      editorDiscoveryQueued = false;
+      const candidates = [];
+      for (const root of roots) {
+        if (!root.isConnected || isRelayUi(root)) continue;
+        if (eligibleEditor(root)) candidates.push(root);
+        collectEditors(root, candidates);
+      }
+      const next = liveSocialModalEditor()
+        || candidates.find(candidate => candidate.closest('[role="dialog"], dialog, .artdeco-modal'))
+        || candidates.at(-1);
+      adoptDiscoveredEditor(next);
+    });
+  }
+
+  function scheduleSocialComposerDiscovery(event) {
+    if (!needsModalInert() || isRelayUi(event?.target)) return;
+    const target = event?.target instanceof Element ? event.target : null;
+    const label = clean(
+      `${target?.getAttribute?.('aria-label') || ''} ${target?.innerText || ''}`,
+      180
+    ).toLowerCase();
+    const modalOpen = Boolean(document.querySelector('[role="dialog"], dialog, .artdeco-modal, .share-box, .share-creation-state'));
+    if (!modalOpen && !/\b(?:start|create|write|add|reply|comment|post)\b/.test(label)) return;
+    for (const delay of [0, 80, 220, 500, 900]) {
+      setTimeout(() => adoptDiscoveredEditor(liveSocialModalEditor()), delay);
+    }
+  }
+
+  document.addEventListener('click', scheduleSocialComposerDiscovery, true);
+
   window.addEventListener('scroll', positionRelayUi, { passive: true });
   window.addEventListener('resize', positionRelayUi, { passive: true });
   // Facebook and other Meta pages mutate large parts of the document while a
@@ -2180,7 +2423,7 @@
   // (Relay overlay mutation -> observer -> render) and freeze the host page.
   // Focus/input events already discover active editors; this observer is only
   // needed to preserve the session when the host removes that editor.
-  new MutationObserver(() => {
+  new MutationObserver((mutations) => {
     if (editor && !isAttached(editor)) {
       if (panelOpen || generatedDraft || undoState) {
         keepPanelAliveWithoutEditor('Composer closed. Reopen it, click inside the field, then Insert.');
@@ -2188,5 +2431,13 @@
       }
       resetPanel(false);
     }
+    // Discover newly opened site composers from their own added subtree. This
+    // makes LinkedIn's empty post modal available before the user types, while
+    // avoiding the old global render-on-every-mutation Facebook freeze loop.
+    const addedNodes = [];
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) addedNodes.push(node);
+    }
+    queueAddedEditorDiscovery(addedNodes);
   }).observe(document.documentElement, { childList: true, subtree: true });
 })();
