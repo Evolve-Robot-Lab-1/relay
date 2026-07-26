@@ -452,3 +452,102 @@ Resuming this checkpoint: dashboard redesign + pricing relabel are the only edit
 - Open Gmail reply → Relay should show "What should this reply say?" with Suggest replies button.
 - Backend should now produce email-formatted drafts (salutation, body, sign-off).
 - Subject line and recipient info included in AI context for better drafts.
+
+## Session: 2026-07-26 production extension delivery and business freeze
+
+### Current production release
+
+- Relay remains live at `https://relay.durgaai.com`.
+- Cloudflare Worker version:
+  `9748da00-15fa-4c58-a63d-84128a6fa3a9`.
+- The downloadable extension is connected to the production Relay API.
+- Extension access now requires:
+  1. A valid email request.
+  2. A six-digit email OTP.
+  3. Successful OTP verification.
+  4. A one-time ZIP download token.
+- OTPs expire after 10 minutes, are stored only as salted hashes, allow at most
+  five failed attempts, and are protected by email, IP, and global rate limits.
+- Download tokens expire after 15 minutes and are invalidated after one use.
+- Direct access to `/downloads/relay-extension.zip` is rejected.
+
+### Transactional email
+
+- Relay OTP mail is sent by the existing Evolve account
+  `evolverobotlab@gmail.com`, displayed as **Relay by Durga**.
+- The previously saved Google refresh token had been revoked. Gmail was
+  reauthorized with the minimal `gmail.send` scope.
+- Google client ID, client secret, and refresh token exist only as encrypted
+  Cloudflare Worker secrets:
+  `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`.
+- `scripts/refresh-relay-gmail-token.mjs` provides the local one-time
+  reauthorization flow if Google revokes the token later. It writes a temporary
+  mode-`600` token file; pipe that value to Wrangler and delete it afterward.
+- The temporary token used for this release was deleted. No credential or OTP
+  value was committed.
+
+### Production acceptance
+
+- OTP request to `contact@evolverobot.in`: HTTP 200.
+- The request returned `verificationRequired: true` and did not expose a
+  download token.
+- User-provided OTP verification: HTTP 200.
+- First authenticated ZIP download: HTTP 200, 58,463 bytes.
+- Reuse of the same download link: HTTP 403.
+- Direct unauthenticated ZIP download: HTTP 403.
+- Generated client syntax, static safety tests, growth tests, `git diff
+  --check`, and Wrangler deployment dry-run passed.
+- Local Wrangler runtime remains blocked on this machine by
+  `uv_interface_addresses returned Unknown system error 1`; production
+  acceptance replaces the unavailable local runtime check for this release.
+
+### Git state
+
+- `5e68666` — Protect extension download with email OTP.
+- `27ccf5e` — Document deferred Durga WhatsApp dual-mode plan.
+- Both commits were pushed to `main` at
+  `https://github.com/Evolve-Robot-Lab-1/relay.git`.
+- `.opencode/` is unrelated and remains untracked and untouched.
+
+### Product and business decision
+
+- Freeze feature development for the next few days. Only fix release-blocking
+  failures found during real testing.
+- Move quickly with the production ZIP while Chrome Web Store review is
+  pending: give it first to a known circle and a small number of businesses,
+  observe installation and first-use behavior, and record failures without
+  collecting private message content.
+- Manual checks remain required for WhatsApp, Gmail, Facebook, LinkedIn, X,
+  Reddit, Threads, and Quora. Prioritize context understanding, compose versus
+  reply detection, tone matching, refine placement, insertion, and layout.
+- The immediate commercial priority is business conversations and near-term
+  training revenue; robotics projects remain a longer-cycle offer.
+- Daily operating blocks discussed for the next working day:
+  - 06:00–08:00 — prepare leads, demonstrations, goals, and follow-ups.
+  - 08:00–10:00 — business meeting slot.
+  - 10:00–12:00 — student training call/session.
+  - 13:00–15:00 — second business meeting slot.
+  - 15:00–17:00 — business call, follow-ups, and travel buffer.
+  - 17:30–19:30 — second student training call/session.
+
+### Deferred Durga architecture
+
+- The low-friction business wedge is two complementary modes:
+  Relay on the business's existing WhatsApp number for human-reviewed replies,
+  and an optional dedicated Durga/API number for always-on automation.
+- The full deferred design and tenant-safe routing contract are saved in
+  `docs/DURGA_DUAL_MODE_WHATSAPP_PLAN.md`.
+- `BACKLOG.md` keeps production stabilization under **Now** and the dual-mode
+  Durga implementation under **Later**.
+
+### Resume from here
+
+1. Do not add features before field testing.
+2. Download through `https://relay.durgaai.com/extension` using email OTP.
+3. Test installation with one known user, then one real business.
+4. Record the site, exact action, expected behavior, actual behavior, and a
+   privacy-safe screenshot for each failure.
+5. Fix only blockers, rerun the relevant checks, redeploy, and continue the
+   pilot.
+
+Last updated: 2026-07-26 (Asia/Kolkata)
