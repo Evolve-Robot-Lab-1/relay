@@ -42,13 +42,22 @@
           </div>
         </div>
         <div class="cta-row">
-          <button class="primary" type="submit">Request test build</button>
+          <button class="primary" type="submit">Email verification code</button>
           <a class="button secondary" href="/use/whatsapp">See WhatsApp guide</a>
         </div>
         <p id="status" class="status" role="status"></p>
       </form>
+      <form id="verification-form" hidden>
+        <label for="verification-code">Verification code</label>
+        <input id="verification-code" name="code" type="text" required maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code" placeholder="Six-digit code">
+        <div class="cta-row">
+          <button class="primary" type="submit">Verify email</button>
+          <button id="change-email" class="secondary" type="button">Change email</button>
+        </div>
+        <p id="verification-status" class="status" role="status"></p>
+      </form>
       <div id="download-ready" hidden>
-        <p><strong>Your request is recorded.</strong> Download the production-connected test build below.</p>
+        <p><strong>Email verified.</strong> This secure download link works once and expires in 15 minutes.</p>
         <a id="download-link" class="button primary" href="/downloads/relay-extension.zip" download>Download Relay test build</a>
       </div>
     </div>
@@ -66,11 +75,14 @@
   <script>
     const form = document.getElementById('extension-request');
     const status = document.getElementById('status');
+    const verificationForm = document.getElementById('verification-form');
+    const verificationStatus = document.getElementById('verification-status');
     const downloadReady = document.getElementById('download-ready');
+    let pendingEmail = '';
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       status.className = 'status';
-      status.textContent = 'Recording your request…';
+      status.textContent = 'Sending your verification code…';
       downloadReady.hidden = true;
       const body = {
         email: document.getElementById('email').value.trim(),
@@ -87,12 +99,48 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'Could not record the request.');
         status.className = 'status ok';
-        status.textContent = 'Access ready. Download the build and follow the install steps.';
-        downloadReady.hidden = false;
+        pendingEmail = body.email;
+        status.textContent = `We sent a six-digit code to ${pendingEmail}.`;
+        form.hidden = true;
+        verificationForm.hidden = false;
+        document.getElementById('verification-code').focus();
       } catch (error) {
         status.className = 'status err';
-        status.textContent = error instanceof Error ? error.message : 'Could not record the request.';
+        status.textContent = error instanceof Error ? error.message : 'Could not send the verification code.';
       }
+    });
+    verificationForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      verificationStatus.className = 'status';
+      verificationStatus.textContent = 'Verifying…';
+      try {
+        const response = await fetch('/api/waitlist/verify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email: pendingEmail,
+            code: document.getElementById('verification-code').value.trim()
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not verify the code.');
+        const token = typeof data.downloadToken === 'string' ? data.downloadToken : '';
+        if (!token) throw new Error('Could not create a secure download link. Please try again.');
+        document.getElementById('download-link').href = `/downloads/relay-extension.zip?token=${encodeURIComponent(token)}`;
+        verificationForm.hidden = true;
+        downloadReady.hidden = false;
+      } catch (error) {
+        verificationStatus.className = 'status err';
+        verificationStatus.textContent = error instanceof Error ? error.message : 'Could not verify the code.';
+      }
+    });
+    document.getElementById('change-email').addEventListener('click', () => {
+      verificationForm.hidden = true;
+      verificationStatus.textContent = '';
+      document.getElementById('verification-code').value = '';
+      form.hidden = false;
+      status.textContent = '';
+      document.getElementById('email').focus();
     });
   </script>
 </body>

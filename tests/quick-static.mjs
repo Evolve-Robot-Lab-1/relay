@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
-const [server, backend, ui, extensionSource, extensionManifestSource, extensionPrivacy, webManifestSource, wranglerConfig] = await Promise.all([
+const [server, backend, ui, extensionSource, extensionManifestSource, extensionPrivacy, webManifestSource, wranglerConfig, extensionPage] = await Promise.all([
   readFile(new URL('server.ts', root), 'utf8'),
   readFile(new URL('backend.ts', root), 'utf8'),
   readFile(new URL('ui.ts', root), 'utf8'),
@@ -10,7 +10,8 @@ const [server, backend, ui, extensionSource, extensionManifestSource, extensionP
   readFile(new URL('extension/manifest.json', root), 'utf8'),
   readFile(new URL('extension/PRIVACY.md', root), 'utf8'),
   readFile(new URL('public/manifest.webmanifest', root), 'utf8'),
-  readFile(new URL('wrangler.toml', root), 'utf8')
+  readFile(new URL('wrangler.toml', root), 'utf8'),
+  readFile(new URL('public/extension.html', root), 'utf8')
 ]);
 
 assert.match(server, /url\.pathname === '\/write'/, 'Worker must serve the Quick Relay route');
@@ -41,10 +42,21 @@ const composeHandler = backend.slice(composeStart, composeEnd);
 assert.doesNotMatch(composeHandler, /this\.write\(`(?:waitlist|goal|partner):/, 'Compose must not persist focused context or CRM payloads');
 assert.match(composeHandler, /consumeDailyQuota/, 'Compose must enforce daily plan quotas');
 assert.match(backend, /async joinWaitlist/, 'Waitlist handler missing');
+assert.match(backend, /async verifyWaitlistEmail/, 'Email OTP verifier is missing');
+assert.match(backend, /async sendExtensionOtp/, 'Email OTP sender is missing');
+assert.match(backend, /GMAIL_REFRESH_TOKEN/, 'Gmail sender must use a protected refresh-token secret');
+assert.match(backend, /EXTENSION_OTP_MAX_ATTEMPTS = 5/, 'OTP attempts must be capped');
+assert.match(backend, /extension-otp-send/, 'OTP requests must be rate limited');
+assert.match(backend, /issueExtensionDownloadToken/, 'Waitlist must issue a gated extension download token');
+assert.match(backend, /consumeExtensionDownload/, 'Extension download token consumer is missing');
 assert.match(backend, /async partnerInterest/, 'Partner interest handler missing');
 assert.match(backend, /async planStatus/, 'Plan status handler missing');
 
 assert.match(server, /url\.pathname === '\/api\/events'/, 'Anonymous usage endpoint is missing');
+assert.match(server, /A valid email request is required before downloading/, 'Extension download must reject direct access');
+assert.match(server, /extension-download\/consume/, 'Extension download must validate a server-side token');
+assert.match(extensionPage, /id="verification-form"/, 'Extension access page must collect the email OTP');
+assert.match(extensionPage, /\/api\/waitlist\/verify/, 'Extension access page must verify the OTP before download');
 assert.match(server, /USAGE_GOALS = new Set\(\[[^\]]*'suggest'/, 'Anonymous suggestion intent telemetry is missing');
 assert.match(server, /RELAY_USAGE\?\.writeDataPoint/, 'Usage events must use Analytics Engine');
 assert.doesNotMatch(server, /body\?\.(?:text|selectedText|nearbyText|hostname|url|title)/, 'Usage events must never accept message or page content');

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 const port = Number(process.env.RELAY_QUICK_TEST_PORT || 8792);
 const origin = `http://localhost:${port}`;
 const testAi = process.env.RELAY_TEST_AI === '1' || process.argv.includes('--ai');
-const wrangler = spawn('./node_modules/.bin/wrangler', ['dev', '--port', String(port)], {
+const wrangler = spawn('./node_modules/.bin/wrangler', ['dev', '--port', String(port), '--var', 'RELAY_OTP_TEST_CODE:654321'], {
   cwd: new URL('../', import.meta.url),
   env: { ...process.env, WRANGLER_LOG_PATH: `/tmp/relay-wrangler-${process.pid}.log` },
   stdio: ['ignore', 'pipe', 'pipe']
@@ -53,7 +53,33 @@ try {
   assert.equal(extensionPage.status, 200);
   assert.match(await extensionPage.text(), /id="extension-request"/);
 
-  const extensionDownload = await fetch(origin + '/downloads/relay-extension.zip');
+  const blockedExtensionDownload = await fetch(origin + '/downloads/relay-extension.zip');
+  assert.equal(blockedExtensionDownload.status, 403, 'Extension download must require an accepted email');
+
+  const testEmail = `quick-local-${Date.now()}@example.com`;
+  const access = await jsonRequest('/api/waitlist', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      cohort: 'founder_freelancer',
+      region: 'south_asia',
+      sites: 'WhatsApp'
+    })
+  });
+  assert.equal(access.response.status, 200);
+  assert.equal(access.body.verificationRequired, true);
+  assert.equal(access.body.downloadToken, undefined, 'Unverified email must not receive a download token');
+
+  const verification = await jsonRequest('/api/waitlist/verify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: testEmail, code: '654321' })
+  });
+  assert.equal(verification.response.status, 200);
+  assert.ok(typeof verification.body.downloadToken === 'string' && verification.body.downloadToken.length > 20);
+
+  const extensionDownload = await fetch(origin + '/downloads/relay-extension.zip?token=' + encodeURIComponent(verification.body.downloadToken));
   assert.equal(extensionDownload.status, 200);
   assert.equal(extensionDownload.headers.get('content-type'), 'application/zip');
   assert.match(extensionDownload.headers.get('content-disposition') || '', /relay-extension\.zip/);

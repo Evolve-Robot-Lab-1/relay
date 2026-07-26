@@ -60,6 +60,10 @@ const WAITLIST_COHORTS = new Set(['non_native_pro', 'founder_freelancer', 'sdr_s
 const WAITLIST_REGIONS = new Set(['americas', 'europe', 'africa_me', 'south_asia', 'sea_apac', 'other']);
 const PARTNER_TIERS = new Set(['creator', 'cross_promo', 'cloud', 'team']);
 const PLAN_LIMITS: Record<string, number> = { free: 40, pro: 400, team: 800 };
+const EXTENSION_DOWNLOAD_TTL_MS = 15 * 60 * 1000;
+const EXTENSION_OTP_TTL_MS = 10 * 60 * 1000;
+const EXTENSION_OTP_MAX_ATTEMPTS = 5;
+const RELAY_OTP_SENDER = 'evolverobotlab@gmail.com';
 
 function utcDayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -95,6 +99,18 @@ function randomSecret(bytes = 24) {
   const data = crypto.getRandomValues(new Uint8Array(bytes));
   let binary = '';
   data.forEach(value => { binary += String.fromCharCode(value); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function randomOtp() {
+  const data = crypto.getRandomValues(new Uint32Array(1));
+  return String(data[0] % 1_000_000).padStart(6, '0');
+}
+
+function base64UrlUtf8(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
@@ -561,6 +577,15 @@ export class RelayStore {
       return new Response(null, { status: 204, headers: quickCorsHeaders(request) });
     }
     if (url.pathname === '/api/waitlist' && request.method === 'POST') return this.joinWaitlist(request);
+    if (url.pathname === '/api/waitlist/verify' && request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: quickCorsHeaders(request) });
+    }
+    if (url.pathname === '/api/waitlist/verify' && request.method === 'POST') {
+      return this.verifyWaitlistEmail(request);
+    }
+    if (url.pathname === '/api/extension-download/consume' && request.method === 'POST') {
+      return this.consumeExtensionDownload(request);
+    }
     if (url.pathname === '/api/partners' && request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: quickCorsHeaders(request) });
     }
@@ -645,42 +670,183 @@ export class RelayStore {
     const sites = cleanText(body?.sites, 200);
     if (!email) return quickJson(request, { error: 'Enter a valid email address.' }, 400);
     if (!cohort || !region) return quickJson(request, { error: 'Choose a cohort and region.' }, 400);
-    if (!this.allow('waitlist:global', 120, 60_000) || !this.allow(`waitlist:${email}`, 3, 3_600_000)) {
-      return quickJson(request, { error: 'Please wait before joining again.' }, 429);
+    const clientIpHash = (await sha256(`otp-ip:${request.headers.get('cf-connecting-ip') || 'unknown'}`)).slice(0, 24);
+    if (
+      !this.allow('extension-otp-send:global', 30, 60_000)
+      || !this.allow(`extension-otp-send:${email}`, 3, 3_600_000)
+      || !this.allow(`extension-otp-ip:${clientIpHash}`, 10, 3_600_000)
+    ) {
+      return quickJson(request, { error: 'Too many verification requests. Please try again later.' }, 429);
     }
 
     const emailHash = (await sha256(`waitlist:${email}`)).slice(0, 32);
     const existing = await this.read(`waitlist:${emailHash}`);
-    if (existing?.inviteCode) {
-      return quickJson(request, {
-        ok: true,
-        status: 'already_joined',
-        cohort: existing.cohort,
-        inviteCode: existing.inviteCode
+    if (!existing?.inviteCode) {
+      const inviteCode = `RELAY-${cohort.slice(0, 3).toUpperCase()}-${randomHex(4).toUpperCase()}`;
+      const entry = {
+        email,
+        cohort,
+        region,
+        sites,
+        inviteCode,
+        plan: cohort === 'sdr_sales' ? 'pro' : 'free',
+        createdAt: Date.now()
+      };
+      await this.write(`waitlist:${emailHash}`, entry);
+      await this.write(`invite:${inviteCode}`, {
+        emailHash,
+        cohort,
+        plan: entry.plan,
+        createdAt: entry.createdAt
       });
+      const index = Array.isArray(await this.read('waitlist:index')) ? await this.read('waitlist:index') : [];
+      index.unshift(emailHash);
+      await this.write('waitlist:index', index.slice(0, 5000));
     }
 
-    const inviteCode = `RELAY-${cohort.slice(0, 3).toUpperCase()}-${randomHex(4).toUpperCase()}`;
-    const entry = {
-      email,
-      cohort,
-      region,
-      sites,
-      inviteCode,
-      plan: cohort === 'sdr_sales' ? 'pro' : 'free',
-      createdAt: Date.now()
-    };
-    await this.write(`waitlist:${emailHash}`, entry);
-    await this.write(`invite:${inviteCode}`, {
-      emailHash,
-      cohort,
-      plan: entry.plan,
-      createdAt: entry.createdAt
+    const code = /^\d{6}$/.test(this.env.RELAY_OTP_TEST_CODE || '')
+      ? String(this.env.RELAY_OTP_TEST_CODE)
+      : randomOtp();
+    const salt = randomSecret(18);
+    const otpKey = `extension-otp:${emailHash}`;
+    await this.write(otpKey, {
+      salt,
+      codeHash: await sha256(`${salt}:${code}`),
+      expiresAt: Date.now() + EXTENSION_OTP_TTL_MS,
+      attempts: 0
     });
-    const index = Array.isArray(await this.read('waitlist:index')) ? await this.read('waitlist:index') : [];
-    index.unshift(emailHash);
-    await this.write('waitlist:index', index.slice(0, 5000));
-    return quickJson(request, { ok: true, status: 'joined', cohort, inviteCode: entry.inviteCode, plan: entry.plan });
+
+    try {
+      if (!this.env.RELAY_OTP_TEST_CODE) await this.sendExtensionOtp(email, code);
+    } catch {
+      await this.tombstone(otpKey);
+      return quickJson(request, { error: 'We could not send the verification email. Please try again.' }, 502);
+    }
+
+    return quickJson(request, {
+      ok: true,
+      status: 'verification_sent',
+      verificationRequired: true,
+      expiresInSeconds: EXTENSION_OTP_TTL_MS / 1000
+    });
+  }
+
+  async sendExtensionOtp(email: string, code: string) {
+    const clientId = cleanText(this.env.GMAIL_CLIENT_ID, 500);
+    const clientSecret = cleanText(this.env.GMAIL_CLIENT_SECRET, 500);
+    const refreshToken = cleanText(this.env.GMAIL_REFRESH_TOKEN, 2000);
+    if (!clientId || !clientSecret || !refreshToken) throw new Error('Email sender is not configured.');
+
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token'
+      })
+    });
+    if (!tokenResponse.ok) throw new Error('Email authentication failed.');
+    const tokenData: any = await tokenResponse.json().catch(() => null);
+    const accessToken = cleanText(tokenData?.access_token, 4000);
+    if (!accessToken) throw new Error('Email authentication failed.');
+
+    const message = [
+      `From: Relay by Durga <${RELAY_OTP_SENDER}>`,
+      `To: ${email}`,
+      'Subject: Your Relay verification code',
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      `Your Relay verification code is: ${code}`,
+      '',
+      'This code expires in 10 minutes. If you did not request the Relay test build, you can ignore this email.',
+      '',
+      'Relay by Durga'
+    ].join('\r\n');
+    const sendResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ raw: base64UrlUtf8(message) })
+    });
+    if (!sendResponse.ok) throw new Error('Email delivery failed.');
+  }
+
+  async verifyWaitlistEmail(request: Request) {
+    if (Number(request.headers.get('content-length') || 0) > 2048) {
+      return quickJson(request, { error: 'Request is too large.' }, 413);
+    }
+    let body: any;
+    try { body = await request.json(); }
+    catch { return quickJson(request, { error: 'Enter the six-digit code from your email.' }, 400); }
+
+    const email = normalizeEmail(body?.email);
+    const code = cleanText(body?.code, 12);
+    if (!email || !/^\d{6}$/.test(code)) {
+      return quickJson(request, { error: 'Enter the six-digit code from your email.' }, 400);
+    }
+    const emailHash = (await sha256(`waitlist:${email}`)).slice(0, 32);
+    if (
+      !this.allow('extension-otp-verify:global', 180, 60_000)
+      || !this.allow(`extension-otp-verify:${emailHash}`, 12, 10 * 60_000)
+    ) {
+      return quickJson(request, { error: 'Too many attempts. Request a new code.' }, 429);
+    }
+
+    const otpKey = `extension-otp:${emailHash}`;
+    const record = await this.read(otpKey);
+    if (
+      !record?.salt
+      || !record?.codeHash
+      || Number(record.expiresAt || 0) <= Date.now()
+      || Number(record.attempts || 0) >= EXTENSION_OTP_MAX_ATTEMPTS
+    ) {
+      return quickJson(request, { error: 'That code is invalid or expired. Request a new code.' }, 400);
+    }
+
+    const matches = await sha256(`${record.salt}:${code}`) === record.codeHash;
+    if (!matches) {
+      const attempts = Number(record.attempts || 0) + 1;
+      if (attempts >= EXTENSION_OTP_MAX_ATTEMPTS) await this.tombstone(otpKey);
+      else await this.write(otpKey, { ...record, attempts });
+      return quickJson(request, { error: 'That code is invalid or expired. Request a new code.' }, 400);
+    }
+
+    await this.tombstone(otpKey);
+    const downloadToken = await this.issueExtensionDownloadToken(emailHash);
+    return quickJson(request, { ok: true, downloadToken });
+  }
+
+  async issueExtensionDownloadToken(emailHash: string) {
+    const token = randomSecret(32);
+    await this.write(`extension-download:${await sha256(token)}`, {
+      emailHash,
+      expiresAt: Date.now() + EXTENSION_DOWNLOAD_TTL_MS
+    });
+    return token;
+  }
+
+  async consumeExtensionDownload(request: Request) {
+    if (Number(request.headers.get('content-length') || 0) > 2048) {
+      return json({ error: 'Request is too large.' }, 413);
+    }
+    let body: any;
+    try { body = await request.json(); }
+    catch { return json({ error: 'Invalid download token.' }, 400); }
+    const token = cleanText(body?.token, 256);
+    if (!token) return json({ error: 'Invalid download token.' }, 403);
+    const key = `extension-download:${await sha256(token)}`;
+    const record = await this.read(key);
+    if (!record?.expiresAt || Number(record.expiresAt) <= Date.now()) {
+      return json({ error: 'Download link expired or is invalid.' }, 403);
+    }
+    await this.tombstone(key);
+    return json({ ok: true });
   }
 
   async partnerInterest(request: Request) {

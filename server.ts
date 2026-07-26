@@ -136,12 +136,31 @@ export default {
     if (/^\/relay-[a-z-]+\.png$/.test(url.pathname)) return env.ASSETS.fetch(request);
     if (url.pathname === '/manifest.webmanifest') return env.ASSETS.fetch(request);
     if (request.method === 'GET' && url.pathname === '/downloads/relay-extension.zip') {
+      const token = url.searchParams.get('token') || '';
+      if (!token) {
+        return new Response('A valid email request is required before downloading the extension.', {
+          status: 403,
+          headers: { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }
+        });
+      }
+      const authorization = await store(env).fetch(new Request(INTERNAL_ORIGIN + '/api/extension-download/consume', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token })
+      }));
+      if (!authorization.ok) {
+        return new Response('The download link is expired or invalid. Request a new test build.', {
+          status: 403,
+          headers: { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }
+        });
+      }
       const assetResponse = await env.ASSETS.fetch(request);
       if (!assetResponse.ok) return new Response('Extension build is not available.', { status: 404 });
       const headers = new Headers(assetResponse.headers);
       headers.set('content-type', 'application/zip');
       headers.set('content-disposition', 'attachment; filename="relay-extension.zip"');
-      headers.set('cache-control', 'public, max-age=300');
+      headers.set('cache-control', 'no-store');
+      headers.set('referrer-policy', 'no-referrer');
       headers.set('x-content-type-options', 'nosniff');
       return new Response(assetResponse.body, { status: 200, headers });
     }
