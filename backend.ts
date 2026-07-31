@@ -176,6 +176,24 @@ function refinementDraftViolation(base: string, instruction: string, draft: stri
   const authorizedDates = new Set(authorized.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || []);
   const outputDates = lowered.match(/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/g) || [];
   if (outputDates.some(date => !authorizedDates.has(date))) return 'The refined draft invented a date.';
+  const fullRewriteRequested = /\b(?:translate|rewrite|start (?:again|over)|from scratch|completely different|entirely different|say (?:this )?instead|new version|use exactly|write exactly|replace (?:(?:the|this) )?(?:draft|reply|message|preview|text|everything)|change (?:(?:the|this) )?(?:draft|reply|message|preview|text) to|friendlier|warmer|professional|formal|casual|polite|softer|stronger|change (?:the )?tone)\b/i.test(instruction);
+  if (!fullRewriteRequested) {
+    const stopWords = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'your', 'you', 'our', 'for', 'are', 'will', 'would', 'could', 'should', 'have', 'has', 'had', 'was', 'were', 'but', 'not', 'into', 'about', 'please', 'just', 'also', 'their', 'they', 'them', 'then', 'than']);
+    const tokens = (value: string) => new Set(
+      value.toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu)?.filter(token => token.length > 2 && !stopWords.has(token)) || []
+    );
+    const baseTokens = tokens(base);
+    const outputTokens = tokens(output);
+    const instructionTokens = tokens(instruction);
+    const targetedChange = /\b(?:remove|delete|drop|omit|replace|change|correct)\b/i.test(instruction);
+    const stableTokens = [...baseTokens].filter(token => !targetedChange || !instructionTokens.has(token));
+    const retained = stableTokens.filter(token => outputTokens.has(token)).length;
+    const retention = stableTokens.length ? retained / stableTokens.length : 1;
+    const minimumRetention = /\b(?:add|include|mention|append|insert|also)\b/i.test(instruction) ? 0.5 : 0.3;
+    if (baseTokens.size >= 3 && retention < minimumRetention) {
+      return 'The refinement replaced unrelated parts of the current preview instead of editing it.';
+    }
+  }
   return '';
 }
 
@@ -1899,9 +1917,6 @@ Instructions: Read the conversation context and the User's situation description
     }
     const source = isDraftRefinement ? text : [text, direction, clarification].filter(Boolean).join('\n');
     const protectedTermsDetected = protectedTerms(source);
-    const refinementRule = isDraftRefinement
-      ? `7. This is iterative refinement pass ${refinementPass}. The current preview is editable source text; the User's latest instruction is the authoritative edit request. Apply that instruction directly. The User may add, remove, correct, replace, or rewrite content. Preserve only the content the instruction does not change. Never answer the instruction, quote it, explain the edit, or switch to the other person's voice. If the User supplies replacement wording, use that wording as the new draft with only clearly requested corrections.`
-      : '';
     const composeContextRule = context.composerKind === 'post' && goal === 'create'
       ? `8. This is a social post composer. Write the actual post, not instructions about a post. The User direction may itself be rough post copy; if so, repair obvious spelling, capitalization, punctuation, and duplicated letters. Never return visibly misspelled direction text unchanged. Do not add hashtags, claims, context, or promotional language the User did not supply.`
       : context.pageType === 'messaging' && goal === 'create'
@@ -1909,7 +1924,7 @@ Instructions: Read the conversation context and the User's situation description
       : context.pageType === 'email'
         ? `8. This is an email${goal === 'create' ? '. Write the email body with proper email format: start with an appropriate salutation (Hi/Hello/Dear), keep paragraphs concise, and end with a suitable sign-off (Best/Thanks/Regards). Do not add a subject line' : ''}. Keep the tone natural and conversational unless the selected tone specifies otherwise.`
         : '';
-    const prompt = `Return only one JSON object. Use {"draft":"text","needsClarification":false,"clarification":""} when a safe draft is possible. Use {"draft":"","needsClarification":true,"clarification":"one short question"} only when one essential fact or the User's intended position is missing.
+    const standardPrompt = `Return only one JSON object. Use {"draft":"text","needsClarification":false,"clarification":""} when a safe draft is possible. Use {"draft":"","needsClarification":true,"clarification":"one short question"} only when one essential fact or the User's intended position is missing.
 
 You are Relay, a browser copilot that writes text for the User to review and insert into the current website field. The chosen goal is ${goal}: ${COMPOSE_GOAL_GUIDANCE[goal]}
 
@@ -1920,27 +1935,44 @@ Rules in priority order:
 4. Never invent facts, reasons, promises, agreement, enthusiasm, personal details, requirements, numbers, dates, recipients, or output formats.
 5. Keep the result concise and natural: normally 1-3 sentences and at most 100 words.
 6. Never send, submit, claim an action occurred, or mention Relay unless the User explicitly included Relay.
-${refinementRule}
 ${composeContextRule}
 
-Protected terms from ${isDraftRefinement ? 'the current preview' : 'the User\'s source text'} must remain exact unless the latest edit instruction explicitly changes or removes them: ${protectedTermsDetected.length ? protectedTermsDetected.join(', ') : '(none detected)'}.
+Protected terms from the User's source text must remain exact: ${protectedTermsDetected.length ? protectedTermsDetected.join(', ') : '(none detected)'}.
 Selected tone: ${tone}. ${toneRule}
 ${clarification ? 'The User already answered one clarification question. Produce the safest useful draft now; do not ask another question.' : 'If one essential detail is missing, ask exactly one direct clarification question instead of guessing.'}`;
 
-    const userMessage = `Page category: ${context.pageType}
+    const refinementPrompt = `Return only one JSON object in the form {"draft":"edited text","needsClarification":false,"clarification":""}.
+
+You are Relay Edit. You edit the CURRENT PREVIEW in place; you are not generating a new reply from the conversation.
+
+Editing contract:
+1. Start from the exact CURRENT PREVIEW and make the smallest change that fully follows the LATEST EDIT INSTRUCTION.
+2. Preserve every sentence, fact, request, speaker, pronoun, and tone that the instruction does not explicitly change.
+3. For "add/include/mention", retain the current preview and integrate only the requested addition.
+4. For "remove/delete", remove only the requested part and keep the rest.
+5. For "change/correct/replace", modify only the targeted wording. A full rewrite or replacement is allowed only when the instruction explicitly requests the whole draft be rewritten or replaced.
+6. Never answer the edit instruction, explain your work, restart from the conversation, introduce a new situation, or write as the Other person.
+7. Return the complete edited preview, not a diff, note, alternative, or quotation.
+8. Keep protected names and terms exact unless the instruction explicitly changes them. Never invent a fact, number, date, currency, promise, or action.
+
+Examples:
+- Preview: "Thanks for the details. I'll be there shortly." Instruction: "change I to we" Edited: "Thanks for the details. We'll be there shortly."
+- Preview: "Our HR team will contact you shortly." Instruction: "add a request for a convenient call time" Edited: "Our HR team will contact you shortly. Please share a convenient time for the call."
+- Preview: "Our HR team will contact you shortly. Please share a convenient time for the call." Instruction: "remove the request for a time" Edited: "Our HR team will contact you shortly."
+
+This is refinement pass ${refinementPass}. The latest instruction is authoritative, and the current preview is the only draft to edit.`;
+
+    const standardUserMessage = `Page category: ${context.pageType}
 Field label: ${context.fieldLabel || '(none)'}
 Field placeholder: ${context.fieldPlaceholder || '(none)'}
 ${context.gmailSubject ? `Email subject: ${context.gmailSubject}` : ''}
 ${context.gmailRecipients ? `Email to: ${context.gmailRecipients}` : ''}
 
-${isDraftRefinement ? 'Current Relay preview to edit' : 'User\'s current field text or rough draft'}:
+User's current field text or rough draft:
 ${text || '(empty)'}
 
-${isDraftRefinement ? 'User\'s latest edit instruction' : 'User\'s instruction to Relay'}:
+User's instruction to Relay:
 ${direction || '(none)'}
-
-Refinement pass:
-${refinementPass || '(none)'}
 
 Text deliberately selected by the User:
 ${context.selectedText || '(none)'}
@@ -1948,6 +1980,10 @@ ${context.selectedText || '(none)'}
 Focused nearby webpage context:
 ${context.nearbyText || '(none)'}
 ${clarification ? `\nUser's clarification:\n${clarification}` : ''}`;
+
+    const refinementUserMessage = `CURRENT PREVIEW:\n${text}\n\nLATEST EDIT INSTRUCTION:\n${direction}\n\nReturn the complete edited preview only in the required JSON object.`;
+    const prompt = isDraftRefinement ? refinementPrompt : standardPrompt;
+    const userMessage = isDraftRefinement ? refinementUserMessage : standardUserMessage;
 
     const modelCount = this.rewriteModelCount();
     const modelPlan = [0, ...Array.from({ length: Math.max(0, modelCount - 1) }, (_, index) => index + 1), 0];
@@ -1990,7 +2026,7 @@ ${clarification ? `\nUser's clarification:\n${clarification}` : ''}`;
         const violation = isDraftRefinement
           ? refinementDraftViolation(text, direction, draft)
           : source ? draftViolation(source, draft, { goal }) : '';
-        const toneProblem = toneViolation(internalTone, draft);
+        const toneProblem = isDraftRefinement ? '' : toneViolation(internalTone, draft);
         if (violation || toneProblem) {
           lastError = violation || toneProblem;
           continue;

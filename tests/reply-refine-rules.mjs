@@ -76,13 +76,46 @@ const replaced = await store.makeComposeDraft('test', {
 });
 assert.equal(replaced.draft, 'Our HR team will contact you shortly.', 'Explicit replacement must execute exactly');
 
+const editStore = Object.create(RelayStore.prototype);
+editStore.env = { AI: {} };
+editStore.groqApiKeys = () => [];
+editStore.allow = () => true;
+editStore.rewriteModelCount = () => 2;
+const editCalls = [];
+editStore.runRewriteModel = async (messages, modelIndex) => {
+  editCalls.push({ messages, modelIndex });
+  return modelIndex === 0
+    ? JSON.stringify({ draft: 'I appreciate your interest and look forward to meeting you.', needsClarification: false, clarification: '' })
+    : JSON.stringify({ draft: 'Our HR team will contact you shortly. Please share a convenient time for the call.', needsClarification: false, clarification: '' });
+};
+const edited = await editStore.makeComposeDraft('test-edit', {
+  text: 'Our HR team will contact you shortly.',
+  direction: 'Add a request for a convenient call time.',
+  goal: 'refine_draft',
+  tone: 'natural',
+  context: { ...messagingContext, nearbyText: 'Other person: PRIVATE CONTEXT MUST NOT RESTART THE DRAFT' },
+  clarification: '',
+  refinementPass: 2
+});
+assert.equal(
+  edited.draft,
+  'Our HR team will contact you shortly. Please share a convenient time for the call.',
+  'Refine must preserve the existing preview and apply only the requested addition'
+);
+assert.deepEqual(editCalls.map(call => call.modelIndex), [0, 1], 'An unrelated rewrite must be rejected before a local edit is accepted');
+assert.match(editCalls[0].messages[0].content, /edit the CURRENT PREVIEW in place/i, 'Refine needs a dedicated editing prompt');
+assert.match(editCalls[0].messages[0].content, /make the smallest change/i, 'Refine must request a minimal patch');
+assert.doesNotMatch(editCalls[0].messages[1].content, /PRIVATE CONTEXT/, 'Refine must not restart from nearby conversation context');
+assert.match(editCalls[0].messages[1].content, /CURRENT PREVIEW:[\s\S]*LATEST EDIT INSTRUCTION:/, 'Refine must separate the current preview from the edit instruction');
+
 assert.match(backend, /latestTurn\?\.speaker === 'you'/, 'Suggest must stop when the User sent the latest labeled message');
 assert.match(backend, /noReplyNeeded: true/, 'Suggest must return an explicit no-reply state');
 assert.match(backend, /Always write as "You"—never answer in the Other person's voice/, 'Suggest prompt must lock speaker ownership');
 assert.match(backend, /Do not reply to a later "You:" turn, repeat a request already answered/, 'Suggest must not re-answer completed turns');
 assert.match(backend, /refine_draft/, 'Backend must expose a dedicated refinement contract');
-assert.match(backend, /current preview is editable source text/i, 'Refine must treat the preview as editable text');
-assert.match(backend, /latest instruction is the authoritative edit request/i, 'Refine must prioritize the latest User correction');
+assert.match(backend, /edit the CURRENT PREVIEW in place/i, 'Refine must treat the preview as editable text');
+assert.match(backend, /latest instruction is authoritative/i, 'Refine must prioritize the latest User correction');
+assert.match(backend, /replaced unrelated parts of the current preview instead of editing it/i, 'Backend must reject unrelated Refine rewrites');
 assert.match(extension, /currentGoal = 'refine_draft'/, 'Extension Refine must use the dedicated backend goal');
 assert.match(extension, /question\.textContent = 'No reply needed yet'/, 'Extension must render the no-reply state');
 assert.match(extension, /draftButton\.textContent = 'Create follow-up'/, 'No-reply state must allow an explicit follow-up goal');
