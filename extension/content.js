@@ -1000,15 +1000,48 @@
     return items;
   }
 
-  function whatsappMessageDirection(item) {
-    const container = item.closest('.message-out, .message-in, [data-id]') || item;
-    const dataId = container.getAttribute?.('data-id') || '';
-    if (container.matches?.('.message-out') || container.closest?.('.message-out') || /^true_/.test(dataId)) return 'You';
-    if (container.matches?.('.message-in') || container.closest?.('.message-in') || /^false_/.test(dataId)) return 'Other person';
+  function whatsappMessageDirection(item, root = document.querySelector('#main') || document.documentElement) {
+    const ancestors = [];
+    let node = item;
+    for (let depth = 0; node instanceof HTMLElement && depth < 12; depth += 1, node = node.parentElement) {
+      ancestors.push(node);
+      if (node === root || node.matches('#main, footer')) break;
+    }
+    const attributeValue = (element, name) => clean(element.getAttribute?.(name), 300).toLowerCase();
+    for (const ancestor of ancestors) {
+      const dataId = attributeValue(ancestor, 'data-id');
+      const fromMe = attributeValue(ancestor, 'data-from-me') || attributeValue(ancestor, 'data-is-outgoing');
+      if (ancestor.matches?.('.message-out') || /(?:^|_)true_/.test(dataId) || fromMe === 'true') return 'You';
+      if (ancestor.matches?.('.message-in') || /(?:^|_)false_/.test(dataId) || fromMe === 'false') return 'Other person';
+    }
+
+    // Current WhatsApp builds may obfuscate both direction classes and message
+    // ids. Delivery/read status exists only on messages sent by the signed-in
+    // user, so treat those status icons as a strong outgoing signal.
+    if (ancestors.some(ancestor => ancestor.querySelector?.(
+      '[data-icon="msg-check"], [data-icon="msg-dblcheck"], [data-icon="msg-dblcheck-ack"], [data-testid*="msg-check" i], [aria-label="Read" i], [aria-label="Delivered" i], [aria-label="Sent" i]'
+    ))) return 'You';
+
     const marker = item.matches?.('[data-pre-plain-text]')
       ? item.getAttribute('data-pre-plain-text')
       : item.querySelector?.('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text');
-    return /\]\s*(?:you|me)\s*:/i.test(marker || '') ? 'You' : 'Other person';
+    if (/\]\s*(?:you|me)\s*:/i.test(marker || '')) return 'You';
+
+    // Final fallback for WhatsApp's frequently-changing DOM: outgoing bubbles
+    // are right-aligned and incoming bubbles are left-aligned. Measure the
+    // message body rather than a full-width virtualized row.
+    const visual = item.matches?.('.copyable-text, [data-testid="msg-text"], span.selectable-text')
+      ? item
+      : item.querySelector?.('.copyable-text, [data-testid="msg-text"], span.selectable-text') || item;
+    const visualRect = visual.getBoundingClientRect?.();
+    const rootRect = root?.getBoundingClientRect?.();
+    if (visualRect && rootRect && visualRect.width > 0 && rootRect.width > 0) {
+      const center = visualRect.left + (visualRect.width / 2);
+      const split = rootRect.left + (rootRect.width / 2);
+      if (center > split + Math.min(24, rootRect.width * 0.03)) return 'You';
+      if (center < split - Math.min(24, rootRect.width * 0.03)) return 'Other person';
+    }
+    return 'Other person';
   }
 
   function siteConversationContext(target) {
@@ -1057,7 +1090,7 @@
         target,
         item => {
           if (item.closest('footer')) return '';
-          const direction = whatsappMessageDirection(item);
+          const direction = whatsappMessageDirection(item, root);
           const body = whatsappMessageBody(item);
           return body ? `${direction}: ${body}` : '';
         },

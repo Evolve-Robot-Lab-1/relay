@@ -29,8 +29,13 @@ const fixture = createHttpServer((request, response) => {
   if (request.url === '/whatsapp-own-latest') {
     response.end(`<!doctype html><html><body>
       <main id="main" style="position:fixed;left:180px;top:40px;width:800px;height:700px">
-        <div class="message-in" style="width:420px;height:54px"><span class="copyable-text">Can I speak with someone about the internship?</span></div>
-        <div class="message-out" style="width:420px;height:54px"><span class="copyable-text">Yes, our HR person will contact you shortly.</span></div>
+        <div data-testid="msg-container" class="x-obfuscated-row" style="width:760px;height:60px">
+          <span class="copyable-text" data-pre-plain-text="[5:58 pm] Raghavendar Robotics Kids Enq:" style="display:block;width:420px;margin-left:16px">Can I speak with someone about the internship?</span>
+        </div>
+        <div data-testid="msg-container" class="x-obfuscated-row" style="width:760px;height:60px">
+          <span class="copyable-text" data-pre-plain-text="[5:59 pm] Evolve Robot Lab:" style="display:block;width:420px;margin-left:324px">Yes, our HR person will contact you shortly.</span>
+          <span class="x-obfuscated-status">✓✓</span>
+        </div>
         <footer style="position:absolute;bottom:20px;width:760px;height:80px">
           <div id="wa-own-latest-compose" contenteditable="true" role="textbox" aria-label="Type a message" style="width:620px;height:52px"></div>
         </footer>
