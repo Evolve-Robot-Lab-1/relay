@@ -18,6 +18,7 @@
   let currentGoal = '';
   let toneIndex = 0;
   let generatedDraft = '';
+  let refinementPass = 0;
   let userDirection = '';
   let clarificationAnswer = '';
   let undoState = null;
@@ -1723,6 +1724,7 @@
     panel.classList.remove('open');
     snapshot = null;
     generatedDraft = '';
+    refinementPass = 0;
     userDirection = '';
     clarificationAnswer = '';
     undoState = null;
@@ -1754,6 +1756,7 @@
     currentGoal = '';
     toneIndex = 0;
     generatedDraft = '';
+    refinementPass = 0;
     userDirection = '';
     clarificationAnswer = '';
     undoState = null;
@@ -1921,7 +1924,7 @@
     } catch {}
   }
 
-  async function generate({ isToneRetry = false, clarification = '', draftBase = '' } = {}) {
+  async function generate({ isToneRetry = false, clarification = '', draftBase = '', refinePass = 0 } = {}) {
     if (!snapshot || !currentGoal || busy) return;
     setBusy(true);
     preview.classList.remove('visible');
@@ -1936,10 +1939,25 @@
         goal: currentGoal,
         tone: TONES[toneIndex][0],
         context: snapshot.context,
+        refinementPass: refinePass,
         clarification
       });
       const result = response.data || {};
       if (!response.ok) throw new Error(result.error || 'Relay could not create this draft.');
+      if (result.noReplyNeeded) {
+        generatedDraft = '';
+        question.textContent = 'No reply needed yet';
+        directionWrap.classList.add('visible');
+        directionInput.value = '';
+        directionInput.placeholder = 'Describe a follow-up if you want to send one…';
+        actionRow.classList.add('visible');
+        draftButton.textContent = 'Create follow-up';
+        suggestButton.hidden = true;
+        status.textContent = result.message || 'You sent the latest message. Wait for a reply or describe a follow-up goal.';
+        refineWrap.classList.remove('visible');
+        updateDraftAvailability();
+        return;
+      }
       if (result.needsClarification) {
         clarificationLabel.textContent = result.clarification || 'What is the main point you want this to communicate?';
         clarificationInput.value = '';
@@ -2008,13 +2026,15 @@
     const bridgeRefine = topBridge?.querySelector('[data-relay-refine]');
     if (bridgeRefine) bridgeRefine.value = '';
     userDirection = more;
-    currentGoal = 'improve_text';
-    void generate({ draftBase: generatedDraft });
+    currentGoal = 'refine_draft';
+    refinementPass += 1;
+    void generate({ draftBase: generatedDraft, refinePass: refinementPass });
   }
 
   function requestToneChange() {
     if (!generatedDraft || busy) return;
     toneIndex = (toneIndex + 1) % TONES.length;
+    refinementPass = 0;
     void generate({ isToneRetry: true, clarification: clarificationAnswer });
   }
 
@@ -2076,6 +2096,7 @@
     currentGoal = '';
     toneIndex = 0;
     generatedDraft = '';
+    refinementPass = 0;
     userDirection = '';
     clarificationAnswer = '';
     undoState = null;
@@ -2092,6 +2113,7 @@
   directionInput.addEventListener('input', () => {
     if (generatedDraft) {
       generatedDraft = '';
+      refinementPass = 0;
       preview.textContent = '';
       preview.classList.remove('visible');
       actions.classList.remove('visible');
@@ -2109,6 +2131,7 @@
     holdRelayFocus = false;
     currentGoal = inferGoal(snapshot.text);
     toneIndex = 0;
+    refinementPass = 0;
     clarificationAnswer = '';
     void track('goal_selected');
     void generate();
@@ -2126,6 +2149,7 @@
     holdRelayFocus = false;
     currentGoal = 'suggest';
     toneIndex = 0;
+    refinementPass = 0;
     clarificationAnswer = '';
     void track('goal_selected');
     void generate();

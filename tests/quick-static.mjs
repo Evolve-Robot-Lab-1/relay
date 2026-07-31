@@ -99,7 +99,7 @@ assert.ok(extensionManifest.content_scripts[0].matches.includes('https://*/*'), 
 assert.equal(extensionManifest.content_scripts[0].all_frames, true, 'Extension must support writing fields inside frames');
 Function(extensionSource);
 assert.match(extensionSource, /attachShadow\(\{ mode: 'open' \}\)/, 'All-site UI must be isolated in Shadow DOM');
-for (const goal of ['create', 'improve_text', 'suggest']) {
+for (const goal of ['create', 'improve_text', 'refine_draft', 'suggest']) {
   assert.match(backend, new RegExp(`(?:'${goal}'|${goal}:)`), `Two-state compose goal is missing: ${goal}`);
 }
 assert.match(extensionSource, /Improve what’s already here/, 'Existing text must open the one-click Improve state');

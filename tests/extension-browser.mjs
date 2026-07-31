@@ -26,6 +26,18 @@ const fixturePort = await freePort();
 const debugPort = await freePort();
 const fixture = createHttpServer((request, response) => {
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  if (request.url === '/whatsapp-own-latest') {
+    response.end(`<!doctype html><html><body>
+      <main id="main" style="position:fixed;left:180px;top:40px;width:800px;height:700px">
+        <div class="message-in" style="width:420px;height:54px"><span class="copyable-text">Can I speak with someone about the internship?</span></div>
+        <div class="message-out" style="width:420px;height:54px"><span class="copyable-text">Yes, our HR person will contact you shortly.</span></div>
+        <footer style="position:absolute;bottom:20px;width:760px;height:80px">
+          <div id="wa-own-latest-compose" contenteditable="true" role="textbox" aria-label="Type a message" style="width:620px;height:52px"></div>
+        </footer>
+      </main>
+    </body></html>`);
+    return;
+  }
   if (request.url === '/facebook-post') {
     response.end(`<!doctype html><html><body>
       <div role="dialog" aria-label="Create post" style="position:fixed;left:200px;top:80px;width:500px;height:520px">
@@ -315,10 +327,18 @@ try {
               return;
             }
             const suggestion = message.body?.goal === 'suggest';
-            const refinement = message.body?.goal === 'improve_text';
-            callback({ ok: true, status: 200, data: {
+            const refinement = message.body?.goal === 'refine_draft';
+            const nearbyText = message.body?.context?.nearbyText || '';
+            const ownLatest = suggestion && nearbyText.includes('You:') && nearbyText.includes('HR person will contact you shortly');
+            callback({ ok: true, status: 200, data: ownLatest ? {
+              draft: '',
+              noReplyNeeded: true,
+              message: 'You sent the latest message. Wait for a reply or describe a follow-up goal.',
+              needsClarification: false
+            } : {
               draft: suggestion
                 ? 'Yes, it is available. I’ll send the price and details.'
+                : refinement && message.body?.refinementPass > 1 ? 'Please do it right away.'
                 : refinement ? 'Do it right now.' : 'Do it now.',
               needsClarification: false
             } });
@@ -409,10 +429,26 @@ try {
     request:globalThis.__relayComposeRequests.at(-1),
     preview:document.querySelector('#relay-top-bridge [data-relay-preview]').textContent
   }))()`);
-  assert.equal(facebookRefine.request.goal, 'improve_text', 'Facebook Refine must use the refinement goal');
+  assert.equal(facebookRefine.request.goal, 'refine_draft', 'Facebook Refine must use the dedicated refinement goal');
   assert.equal(facebookRefine.request.text, 'Do it now.', 'Facebook Refine must use the generated draft as its source');
   assert.equal(facebookRefine.request.direction, 'Make it more immediate', 'Facebook Refine must send the refinement instruction');
+  assert.equal(facebookRefine.request.refinementPass, 1, 'Facebook Refine must mark the first refinement pass');
   assert.equal(facebookRefine.preview, 'Do it right now.', 'Facebook Refine must replace the preview with the refined draft');
+  await evaluate(`(() => {
+    const bridge=document.querySelector('#relay-top-bridge');
+    const input=bridge.querySelector('[data-relay-refine]');
+    input.value='Make it more immediate';
+    input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:input.value}));
+    bridge.querySelector('[data-relay-refine-button]').click();
+  })()`);
+  await delay(100);
+  const facebookSecondRefine = await evaluate(`(() => ({
+    request:globalThis.__relayComposeRequests.at(-1),
+    preview:document.querySelector('#relay-top-bridge [data-relay-preview]').textContent
+  }))()`);
+  assert.equal(facebookSecondRefine.request.text, 'Do it right now.', 'A second Refine must use the latest refined draft as its source');
+  assert.equal(facebookSecondRefine.request.refinementPass, 2, 'A second Refine must mark a new refinement pass');
+  assert.equal(facebookSecondRefine.preview, 'Please do it right away.', 'A second Refine must replace the preview again');
 
   await evaluate(`document.querySelector('#relay-top-bridge [data-relay-startover]').click()`);
   await evaluate(`(() => {
@@ -635,6 +671,40 @@ try {
   const linkedinSpecificContext = await evaluate(`globalThis.__relayComposeRequests.at(-1)?.context?.nearbyText || ''`);
   assert.match(linkedinSpecificContext, /^Replying to Vikram B\.'s LinkedIn comment:/, 'The exact LinkedIn comment must be first in context');
   assert.match(linkedinSpecificContext, /What age group is this for\?/, 'The replied-to LinkedIn comment body must be captured');
+
+  await loadSocialFixture('/whatsapp-own-latest', 'web.whatsapp.com');
+  await evaluate(`(() => {
+    const field=document.querySelector('#wa-own-latest-compose');
+    field.focus();
+    field.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));
+    document.querySelector('#relay-extension-host').shadowRoot.querySelector('.chip').click();
+  })()`);
+  await delay(50);
+  await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.action-btn.secondary').click()`);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await evaluate(`document.querySelector('#relay-extension-host').shadowRoot.querySelector('.question').textContent === 'No reply needed yet'`)) break;
+    if (attempt === 99) throw new Error('Relay did not stop Suggest after the User\'s own latest WhatsApp message.');
+    await delay(25);
+  }
+  const noReplyState = await evaluate(`(() => {
+    const root=document.querySelector('#relay-extension-host').shadowRoot;
+    const request=globalThis.__relayComposeRequests.at(-1);
+    return {
+      context:request?.context?.nearbyText || '',
+      goal:request?.goal,
+      question:root.querySelector('.question').textContent,
+      status:root.querySelector('.status').textContent,
+      preview:root.querySelector('.preview').classList.contains('visible'),
+      followUp:root.querySelector('.action-btn.primary').textContent
+    };
+  })()`);
+  assert.match(noReplyState.context, /Other person: Can I speak with someone about the internship\?/);
+  assert.match(noReplyState.context, /You: Yes, our HR person will contact you shortly\./);
+  assert.equal(noReplyState.goal, 'suggest');
+  assert.equal(noReplyState.question, 'No reply needed yet');
+  assert.match(noReplyState.status, /You sent the latest message/);
+  assert.equal(noReplyState.preview, false, 'No-reply state must not show a fabricated draft');
+  assert.equal(noReplyState.followUp, 'Create follow-up', 'The User may explicitly request a follow-up');
   console.log('Relay extension browser checks passed.');
 } finally {
   cdp?.socket.close();

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node tests/client-syntax.mjs && node tests/quick-static.mjs && node tests/growth-static.mjs && wrangler deploy --dry-run",
+    "check": "node tests/client-syntax.mjs && node tests/reply-refine-rules.mjs && node tests/quick-static.mjs && node tests/growth-static.mjs && wrangler deploy --dry-run",
     "extension:package": "bash scripts/package-extension.sh",
     "test:quick": "node tests/quick-static.mjs",
     "test:quick:local": "node tests/quick-local.mjs",
